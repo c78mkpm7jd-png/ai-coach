@@ -234,20 +234,24 @@ export default function CheckinPage() {
             </div>
           )}
 
-          {/* Kalorienverbrauch durch Sport – immer sichtbar */}
+          {/* Gesamtverbrauch heute (Garmin) – immer sichtbar */}
           <div className="space-y-2">
             <label className="text-sm font-medium text-white/85">
-              Kalorienverbrauch (kcal, laut Uhr/Garmin)
+              Gesamtverbrauch heute (kcal, laut Garmin)
             </label>
             <input
               type="number"
               min={0}
-              max={2000}
+              max={6000}
               value={caloriesBurned}
               onChange={(e) => setCaloriesBurned(e.target.value)}
-              placeholder="z. B. 420"
+              placeholder="z. B. 2400"
               className="w-full max-w-xs rounded-xl border border-white/15 bg-zinc-900 px-3 py-2 text-sm text-white placeholder:text-white/30 focus:border-white/40 focus:ring-2 focus:ring-white/20"
             />
+            <p className="text-xs text-white/55">
+              Trage den gesamten Tagesverbrauch ein (Grundumsatz + aktiver Verbrauch),
+              nicht nur den Sport-Verbrauch.
+            </p>
           </div>
 
           {/* Ernährungsdaten heute */}

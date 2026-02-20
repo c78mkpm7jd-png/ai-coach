@@ -111,22 +111,22 @@ export async function GET() {
     const activityLevel = String(profile.activity_level || 'sitzend')
     const goal = String(profile.goal || 'maintain')
 
-    const bmrVal = bmr(weight, height, age, gender === 'w')
-    const multiplier = activityMultiplier[activityLevel] ?? 1.2
-    let tdee = Math.round(bmrVal * multiplier)
-
-    // Durchschnittlicher Kalorienverbrauch durch Training (letzte 7 Check-ins) zum TDEE addieren
-    const activityCaloriesList = (checkins as { activity_calories_burned?: number | null }[])
+    // TDEE: Wenn Gesamtverbrauch (Garmin) in Check-ins eingetragen wurde, diesen nutzen; sonst aus Profil berechnen
+    const garminBurnList = (checkins as { activity_calories_burned?: number | null }[])
       .map((c) => c.activity_calories_burned)
       .filter((v): v is number => typeof v === 'number' && v > 0)
-    const avgActivityBurn =
-      activityCaloriesList.length > 0
-        ? Math.round(
-            activityCaloriesList.reduce((a, b) => a + b, 0) / activityCaloriesList.length
-          )
-        : 0
-    tdee += avgActivityBurn
+    const hasGarminTdee = garminBurnList.length > 0
+    const tdee = hasGarminTdee
+      ? Math.round(
+          garminBurnList.reduce((a, b) => a + b, 0) / garminBurnList.length
+        )
+      : (() => {
+          const bmrVal = bmr(weight, height, age, gender === 'w')
+          const multiplier = activityMultiplier[activityLevel] ?? 1.2
+          return Math.round(bmrVal * multiplier)
+        })()
 
+    // Ziel-Kalorien: Bulk/Cut/Recomp auf TDEE addieren oder subtrahieren
     const targetCalories = getTargetCalories(tdee, goal)
 
     // Letzte Aktivität: mehr Protein nach Krafttraining, mehr Carbs nach langer Ausdauer
