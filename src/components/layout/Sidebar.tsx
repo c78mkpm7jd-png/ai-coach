@@ -50,7 +50,7 @@ function UserIcon() {
 
 const navItems = [
   { href: "/dashboard", label: "Dashboard", icon: GridIcon },
-  { href: "/chat", label: "Assistent", icon: ChatIcon },
+  { href: "/chat", label: "Coach", icon: ChatIcon },
   { href: "/profil", label: "Einstellungen", icon: SettingsIcon },
 ];
 

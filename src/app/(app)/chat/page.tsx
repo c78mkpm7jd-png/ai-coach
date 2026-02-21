@@ -100,7 +100,7 @@ export default function ChatPage() {
     <div className="flex h-[calc(100svh-5rem)] flex-col bg-zinc-950 md:h-screen">
       <header className="shrink-0 border-b border-white/10 px-4 py-3">
         <p className="text-xs font-medium uppercase tracking-[0.2em] text-white/40">
-          Assistent
+          Coach
         </p>
         <h1 className="text-lg font-semibold tracking-tight text-white">
           Dein AI Fitness Coach
