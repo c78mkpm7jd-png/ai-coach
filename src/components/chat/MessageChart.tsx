@@ -58,7 +58,7 @@ export default function MessageChart({ chart }: { chart: ChartPayload }) {
             <YAxis stroke="rgba(255,255,255,0.5)" tick={{ fontSize: 10 }} domain={["auto", "auto"]} />
             <Tooltip
               contentStyle={{ backgroundColor: "#18181b", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 8 }}
-              labelFormatter={formatDateShort}
+              labelFormatter={(label: any) => formatDateShort(label as string)}
               formatter={(value: number) => [`${value} kg`, "Gewicht"]}
               labelStyle={{ color: "rgba(255,255,255,0.8)" }}
             />
@@ -82,7 +82,7 @@ export default function MessageChart({ chart }: { chart: ChartPayload }) {
             <YAxis stroke="rgba(255,255,255,0.5)" tick={{ fontSize: 10 }} />
             <Tooltip
               contentStyle={{ backgroundColor: "#18181b", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 8 }}
-              labelFormatter={formatDateShort}
+              labelFormatter={(label: any) => formatDateShort(label as string)}
               formatter={(value: number, name: string) => [value, name === "calories" ? "Kcal" : name === "protein" ? "Protein (g)" : name === "carbs" ? "Carbs (g)" : "Fett (g)"]}
               labelStyle={{ color: "rgba(255,255,255,0.8)" }}
             />
@@ -108,7 +108,7 @@ export default function MessageChart({ chart }: { chart: ChartPayload }) {
             <YAxis stroke="rgba(255,255,255,0.5)" tick={{ fontSize: 10 }} />
             <Tooltip
               contentStyle={{ backgroundColor: "#18181b", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 8 }}
-              labelFormatter={formatDateShort}
+              labelFormatter={(label: any) => formatDateShort(label as string)}
               formatter={(value: number, _: unknown, props: { payload: { label: string; duration: number; calories: number } }) => [
                 value ? `${value} min` : (props.payload.calories ? `${props.payload.calories} kcal` : props.payload.label),
                 "Aktivität",
@@ -133,7 +133,7 @@ export default function MessageChart({ chart }: { chart: ChartPayload }) {
             <YAxis stroke="rgba(255,255,255,0.5)" tick={{ fontSize: 10 }} domain={[1, 5]} />
             <Tooltip
               contentStyle={{ backgroundColor: "#18181b", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 8 }}
-              labelFormatter={formatDateShort}
+              labelFormatter={(label: any) => formatDateShort(label as string)}
               formatter={(value: number, name: string) => [value, name === "energy" ? "Energie" : "Hunger"]}
               labelStyle={{ color: "rgba(255,255,255,0.8)" }}
             />
