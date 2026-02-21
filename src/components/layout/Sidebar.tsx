@@ -105,7 +105,7 @@ export default function Sidebar() {
         })}
       </nav>
 
-      <div className="border-t border-[#e0e0e0] p-2 space-y-1">
+      <div className="border-t border-white/10 p-2 space-y-1">
         <Link
           href="/checkin"
           className={`flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition ${
