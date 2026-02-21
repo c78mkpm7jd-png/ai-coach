@@ -183,9 +183,7 @@ export async function GET() {
     const nutritionHint =
       lastCheckin && (lastCheckin.calories_intake != null || lastCheckin.protein_intake != null)
         ? `
-Ernährungsdaten vom letzten Check-in (Vortag): ${lastCheckin.calories_intake ?? 'nicht erfasst'} kcal, ${lastCheckin.protein_intake ?? '–'} g Protein, ${lastCheckin.carbs_intake ?? '–'} g Carbs, ${lastCheckin.fat_intake ?? '–'} g Fett. Ziel für diesen Nutzer: ca. ${calorieTarget} kcal, mind. ${proteinTarget} g Protein.
-- War die Proteinzufuhr zu niedrig (unter ca. ${proteinTarget} g)? Dann formuliere im coachTipBody eine klare Empfehlung für mehr Protein (z. B. eine Extra-Portion oder Shake).
-- War die Kalorienaufnahme deutlich zu niedrig oder zu hoch gegenüber dem Ziel? Passe im Tipp die Empfehlung an (mehr essen / entspannt bleiben / leicht reduzieren).`
+Optional für Personalisierung: Letzter Check-in – ${lastCheckin.calories_intake ?? '–'} kcal, ${lastCheckin.protein_intake ?? '–'} g Protein. Ziel: ca. ${calorieTarget} kcal, mind. ${proteinTarget} g Protein. Wenn du einen personalisierten Tipp wählst (z. B. Protein-Lücke oder Kalorien-Anpassung), formuliere ihn spezifisch und nicht generisch. Ansonsten wähle einen starken allgemeinen Tipp aus den genannten Bereichen.`
         : ''
 
     const openai = new OpenAI({ apiKey: openaiKey })
@@ -195,16 +193,17 @@ Deine Antwort muss valides JSON sein mit exakt diesen Feldern (kein anderer Text
 - "greeting": eine kurze persönliche Begrüßung (1 Satz)
 - "trainingDay": Name des heutigen Trainingstags (z.B. "Oberkörper", "Beine", "Push", "Pull", "Ganzkörper") passend zu ${trainingDaysPerWeek} Trainingstagen pro Woche. Heute ist ${weekday}.
 - "trainingSubtext": ein kurzer Satz Fokus/Hinweis für das heutige Training
-- "coachTipTitle": eine kurze Überschrift für den Coach-Tipp (mit Anführungszeichen)
-- "coachTipBody": 2-4 Sätze konkreter Tipp. Berücksichtige die letzten Check-in-Daten (Hunger, Energie, Training) und die Ernährungsdaten vom Vortag: War die Proteinzufuhr zu niedrig? → Empfehle mehr Protein. War die Kalorienaufnahme zu niedrig oder zu hoch? → Passe die Empfehlung an. Sei spezifisch und ermutigend.`
+- "coachTipTitle": eine kurze, prägnante Überschrift für den Coach-Tipp (mit Anführungszeichen)
+- "coachTipBody": Der Coach-Tipp ist eine Mischung aus (1) personalisierten Hinweisen basierend auf den Nutzerdaten (wenn vorhanden und relevant) und (2) hochwertigen, wenig bekannten Insights. Quellen für allgemeine Tipps: wenig bekannte Trainingsoptimierungen, Ernährungswissenschaft (spezifisch, evidenzbasiert), Regeneration und Schlafqualität, mentale Stärke und Performance, Supplement-Timing und Wirkung. WICHTIG: Keine 0815-Tipps wie "trink mehr Wasser" oder "schlaf gut". Nur spezifische, umsetzbare Insights, die der Nutzer wahrscheinlich noch nicht kennt. Maximal 3 Sätze, präzise und sofort umsetzbar. Jeden Tag ein anderer Schwerpunkt – abwechslungsreich halten.`
 
-    const userPrompt = `Profil: Ziel ${goal}, ${age} Jahre, ${gender === 'm' ? 'männlich' : 'weiblich'}, ${height} cm, ${weight} kg, Aktivität ${activityLevel}, ${trainingDaysPerWeek}x Training pro Woche. Tagesziel Kalorien: ca. ${calorieTarget} kcal, Protein mind. ${proteinTarget} g.
+    const todayISO = new Date().toISOString().slice(0, 10)
+    const userPrompt = `Heute: ${todayISO} (${weekday}). Profil: Ziel ${goal}, ${age} Jahre, ${gender === 'm' ? 'männlich' : 'weiblich'}, ${height} cm, ${weight} kg, Aktivität ${activityLevel}, ${trainingDaysPerWeek}x Training pro Woche. Tagesziel: ca. ${calorieTarget} kcal, Protein mind. ${proteinTarget} g.
 
 Letzte Check-ins (mit Ernährungsdaten wo erfasst):
 ${checkinsSummary || 'Noch keine Check-ins.'}
 ${nutritionHint}
 
-Generiere das JSON für das Daily Briefing.`
+Generiere das JSON für das Daily Briefing. Wähle für coachTipTitle und coachTipBody einen anderen Schwerpunkt als an typischen "Motivations-Tagen" – abwechslungsreich und inhaltlich wertvoll.`
 
     const completion = await openai.chat.completions.create({
       model: 'gpt-4o',
