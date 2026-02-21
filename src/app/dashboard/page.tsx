@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { UserButton } from "@clerk/nextjs";
 
 function formatDateGerman(date: Date) {
@@ -23,6 +24,7 @@ type BriefingData = {
 };
 
 export default function DashboardPage() {
+  const router = useRouter();
   const today = new Date();
   const [briefing, setBriefing] = useState<BriefingData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -31,13 +33,19 @@ export default function DashboardPage() {
   useEffect(() => {
     fetch("/api/briefing")
       .then((res) => {
-        if (!res.ok) throw new Error(res.status === 404 ? "Profil fehlt" : "Fehler beim Laden");
+        if (res.status === 404) {
+          router.replace("/onboarding");
+          return null;
+        }
+        if (!res.ok) throw new Error("Fehler beim Laden");
         return res.json();
       })
-      .then((data) => setBriefing(data))
+      .then((data) => {
+        if (data) setBriefing(data);
+      })
       .catch((err) => setError(err.message))
       .finally(() => setLoading(false));
-  }, []);
+  }, [router]);
 
   const todayTrainingLabel = briefing?.trainingDay ?? "—";
   const trainingSubtext = briefing?.trainingSubtext ?? "Fokus auf saubere Ausführung.";
