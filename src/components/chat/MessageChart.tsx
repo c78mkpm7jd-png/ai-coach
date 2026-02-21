@@ -36,9 +36,19 @@ export type ChartPayload =
   | { type: "energy_hunger"; title: string | null; data: { date: string; energy: number; hunger: number }[] }
   | { type: "pie"; title: string | null; data: { name: string; value: number }[] };
 
-function formatDateShort(dateStr: string) {
+function formatDateShort(dateStr: string): string {
   const d = new Date(dateStr + "Z");
   return d.toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit" });
+}
+
+function safeLabelFormatter(label: unknown): string {
+  if (typeof label === "string") return formatDateShort(label);
+  return formatDateShort(String(label ?? ""));
+}
+
+function safeTickFormatter(value: unknown): string {
+  if (typeof value === "string") return formatDateShort(value);
+  return formatDateShort(String(value ?? ""));
 }
 
 export default function MessageChart({ chart }: { chart: ChartPayload }) {
@@ -54,12 +64,12 @@ export default function MessageChart({ chart }: { chart: ChartPayload }) {
         <ResponsiveContainer width="100%" height={height}>
           <LineChart data={data} margin={{ top: 5, right: 5, left: -10, bottom: 0 }}>
             <CartesianGrid strokeDasharray="3 3" stroke={CHART_COLORS.grid} />
-            <XAxis dataKey="date" tickFormatter={formatDateShort} stroke="rgba(255,255,255,0.5)" tick={{ fontSize: 10 }} />
+            <XAxis dataKey="date" tickFormatter={safeTickFormatter} stroke="rgba(255,255,255,0.5)" tick={{ fontSize: 10 }} />
             <YAxis stroke="rgba(255,255,255,0.5)" tick={{ fontSize: 10 }} domain={["auto", "auto"]} />
             <Tooltip
               contentStyle={{ backgroundColor: "#18181b", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 8 }}
-              labelFormatter={(label: any) => formatDateShort(label as string)}
-              formatter={(value: number | undefined, name: string) => [`${value ?? 0} kg`, "Gewicht"]}
+              labelFormatter={safeLabelFormatter}
+              formatter={(value: number | undefined) => [`${value ?? 0} kg`, "Gewicht"]}
               labelStyle={{ color: "rgba(255,255,255,0.8)" }}
             />
             <Line type="monotone" dataKey="weight" stroke={CHART_COLORS.weight} strokeWidth={2} dot={{ fill: CHART_COLORS.weight, r: 3 }} name="Gewicht (kg)" />
@@ -78,15 +88,15 @@ export default function MessageChart({ chart }: { chart: ChartPayload }) {
         <ResponsiveContainer width="100%" height={height}>
           <BarChart data={data} margin={{ top: 5, right: 5, left: -10, bottom: 0 }} barCategoryGap="20%">
             <CartesianGrid strokeDasharray="3 3" stroke={CHART_COLORS.grid} />
-            <XAxis dataKey="date" tickFormatter={formatDateShort} stroke="rgba(255,255,255,0.5)" tick={{ fontSize: 10 }} />
+            <XAxis dataKey="date" tickFormatter={safeTickFormatter} stroke="rgba(255,255,255,0.5)" tick={{ fontSize: 10 }} />
             <YAxis stroke="rgba(255,255,255,0.5)" tick={{ fontSize: 10 }} />
             <Tooltip
               contentStyle={{ backgroundColor: "#18181b", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 8 }}
-              labelFormatter={(label: any) => formatDateShort(label as string)}
-              formatter={(value: number | undefined, name: string) => [value ?? 0, name === "calories" ? "Kcal" : name === "protein" ? "Protein (g)" : name === "carbs" ? "Carbs (g)" : "Fett (g)"]}
+              labelFormatter={safeLabelFormatter}
+              formatter={(value: number | undefined, name?: string) => [value ?? 0, (name === "calories" ? "Kcal" : name === "protein" ? "Protein (g)" : name === "carbs" ? "Carbs (g)" : "Fett (g)")]}
               labelStyle={{ color: "rgba(255,255,255,0.8)" }}
             />
-            <Legend wrapperStyle={{ fontSize: 10 }} formatter={(v) => (v === "calories" ? "Kcal" : v === "protein" ? "Protein" : v === "carbs" ? "Carbs" : "Fett")} />
+            <Legend wrapperStyle={{ fontSize: 10 }} formatter={(v: unknown) => (v === "calories" ? "Kcal" : v === "protein" ? "Protein" : v === "carbs" ? "Carbs" : "Fett")} />
             <Bar dataKey="calories" fill={CHART_COLORS.calories} name="calories" radius={[4, 4, 0, 0]} />
             <Bar dataKey="protein" fill={CHART_COLORS.protein} name="protein" radius={[4, 4, 0, 0]} />
             <Bar dataKey="carbs" fill={CHART_COLORS.carbs} name="carbs" radius={[4, 4, 0, 0]} />
@@ -104,13 +114,13 @@ export default function MessageChart({ chart }: { chart: ChartPayload }) {
         <ResponsiveContainer width="100%" height={height}>
           <BarChart data={data} margin={{ top: 5, right: 5, left: -10, bottom: 0 }} barCategoryGap="20%">
             <CartesianGrid strokeDasharray="3 3" stroke={CHART_COLORS.grid} />
-            <XAxis dataKey="date" tickFormatter={formatDateShort} stroke="rgba(255,255,255,0.5)" tick={{ fontSize: 10 }} />
+            <XAxis dataKey="date" tickFormatter={safeTickFormatter} stroke="rgba(255,255,255,0.5)" tick={{ fontSize: 10 }} />
             <YAxis stroke="rgba(255,255,255,0.5)" tick={{ fontSize: 10 }} />
             <Tooltip
               contentStyle={{ backgroundColor: "#18181b", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 8 }}
-              labelFormatter={(label: any) => formatDateShort(label as string)}
-              formatter={(value: number | undefined, _: unknown, props: { payload: { label: string; duration: number; calories: number } }) => [
-                value != null ? `${value} min` : (props.payload.calories ? `${props.payload.calories} kcal` : props.payload.label),
+              labelFormatter={safeLabelFormatter}
+              formatter={(value: number | undefined, _?: unknown, item?: { payload?: { label?: string; duration?: number; calories?: number } }) => [
+                value != null ? `${value} min` : (item?.payload?.calories ? `${item.payload.calories} kcal` : item?.payload?.label ?? "—"),
                 "Aktivität",
               ]}
               labelStyle={{ color: "rgba(255,255,255,0.8)" }}
@@ -129,12 +139,12 @@ export default function MessageChart({ chart }: { chart: ChartPayload }) {
         <ResponsiveContainer width="100%" height={height}>
           <LineChart data={data} margin={{ top: 5, right: 5, left: -10, bottom: 0 }}>
             <CartesianGrid strokeDasharray="3 3" stroke={CHART_COLORS.grid} />
-            <XAxis dataKey="date" tickFormatter={formatDateShort} stroke="rgba(255,255,255,0.5)" tick={{ fontSize: 10 }} />
+            <XAxis dataKey="date" tickFormatter={safeTickFormatter} stroke="rgba(255,255,255,0.5)" tick={{ fontSize: 10 }} />
             <YAxis stroke="rgba(255,255,255,0.5)" tick={{ fontSize: 10 }} domain={[1, 5]} />
             <Tooltip
               contentStyle={{ backgroundColor: "#18181b", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 8 }}
-              labelFormatter={(label: any) => formatDateShort(label as string)}
-              formatter={(value: number | undefined, name: string) => [value ?? 0, name === "energy" ? "Energie" : "Hunger"]}
+              labelFormatter={safeLabelFormatter}
+              formatter={(value: number | undefined, name?: string) => [value ?? 0, name === "energy" ? "Energie" : "Hunger"]}
               labelStyle={{ color: "rgba(255,255,255,0.8)" }}
             />
             <Line type="monotone" dataKey="energy" stroke={CHART_COLORS.energy} strokeWidth={2} dot={{ fill: CHART_COLORS.energy, r: 3 }} name="Energie" />
@@ -162,7 +172,7 @@ export default function MessageChart({ chart }: { chart: ChartPayload }) {
               outerRadius={80}
               stroke="rgba(255,255,255,0.1)"
               strokeWidth={1}
-              label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
+              label={({ name, percent }: { name?: string; percent?: number }) => `${name ?? ""} ${((percent ?? 0) * 100).toFixed(0)}%`}
               labelLine={{ stroke: "rgba(255,255,255,0.4)" }}
             >
               {pieData.map((_, index) => (
@@ -171,7 +181,7 @@ export default function MessageChart({ chart }: { chart: ChartPayload }) {
             </Pie>
             <Tooltip
               contentStyle={{ backgroundColor: "#18181b", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 8 }}
-              formatter={(value: number | undefined, name: string) => [`${value ?? 0} g`, name]}
+              formatter={(value: number | undefined, name?: string) => [`${value ?? 0} g`, name ?? ""]}
               labelStyle={{ color: "rgba(255,255,255,0.8)" }}
             />
           </PieChart>
