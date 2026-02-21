@@ -70,7 +70,7 @@ function getMacros(
   }
 }
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
     const { userId } = await auth()
     if (!userId) {
@@ -83,6 +83,9 @@ export async function GET() {
         { status: 500 }
       )
     }
+
+    const { searchParams } = new URL(request.url)
+    const only = searchParams.get('only') as 'tip' | 'analysis' | null
 
     const [profileRes, checkinsRes] = await Promise.all([
       supabaseAdmin.from('profiles').select('*').eq('id', userId).single(),
@@ -174,68 +177,97 @@ export async function GET() {
       })
       .join('\n')
 
-    const lastCheckin = (checkins as CheckinRow[])[0]
-    const proteinTarget = Math.round(weight * 2)
-    const calorieTarget = targetCalories
-    const nutritionHint =
-      lastCheckin && (lastCheckin.calories_intake != null || lastCheckin.protein_intake != null)
-        ? `
-Optional für Personalisierung: Letzter Check-in – ${lastCheckin.calories_intake ?? '–'} kcal, ${lastCheckin.protein_intake ?? '–'} g Protein. Ziel: ca. ${calorieTarget} kcal, mind. ${proteinTarget} g Protein. Wenn du einen personalisierten Tipp wählst (z. B. Protein-Lücke oder Kalorien-Anpassung), formuliere ihn spezifisch und nicht generisch. Ansonsten wähle einen starken allgemeinen Tipp aus den genannten Bereichen.`
-        : ''
-
+    const hasCheckins = checkins.length >= 1
     const openai = new OpenAI({ apiKey: openaiKey })
 
-    const systemPrompt = `Du bist ein freundlicher, prägnanter Fitness- und Ernährungscoach. Antworte ausschließlich auf Deutsch.
+    const defaultTip = {
+      greeting: 'Willkommen zurück.',
+      trainingDay: 'Oberkörper',
+      trainingSubtext: 'Fokus auf saubere Ausführung.',
+      coachTipTitle: 'Gewinn den Tag mit den ersten 2 Sätzen.',
+      coachTipBody: 'Konzentriere dich auf die ersten Sätze jeder Hauptübung – sauber und kontrolliert.',
+    }
+
+    let greeting = defaultTip.greeting
+    let trainingDay = defaultTip.trainingDay
+    let trainingSubtext = defaultTip.trainingSubtext
+    let coachTipTitle = defaultTip.coachTipTitle
+    let coachTipBody = defaultTip.coachTipBody
+    let analysisTitle: string | null = null
+    let analysisBody: string | null = null
+
+    // 1. Allgemeiner Tipp (ohne Nutzerdaten) – nur wenn nicht only=analysis
+    if (only !== 'analysis') {
+      const tipSystemPrompt = `Du bist ein prägnanter Fitness- und Ernährungscoach. Antworte ausschließlich auf Deutsch.
 Deine Antwort muss valides JSON sein mit exakt diesen Feldern (kein anderer Text):
 - "greeting": eine kurze persönliche Begrüßung (1 Satz)
 - "trainingDay": Name des heutigen Trainingstags (z.B. "Oberkörper", "Beine", "Push", "Pull", "Ganzkörper") passend zu ${trainingDaysPerWeek} Trainingstagen pro Woche. Heute ist ${weekday}.
 - "trainingSubtext": ein kurzer Satz Fokus/Hinweis für das heutige Training
-- "coachTipTitle": eine kurze, prägnante Überschrift für den Coach-Tipp (mit Anführungszeichen)
-- "coachTipBody": Der Coach-Tipp ist eine Mischung aus (1) personalisierten Hinweisen basierend auf den Nutzerdaten (wenn vorhanden und relevant) und (2) hochwertigen, wenig bekannten Insights. Quellen für allgemeine Tipps: wenig bekannte Trainingsoptimierungen, Ernährungswissenschaft (spezifisch, evidenzbasiert), Regeneration und Schlafqualität, mentale Stärke und Performance, Supplement-Timing und Wirkung. WICHTIG: Keine 0815-Tipps wie "trink mehr Wasser" oder "schlaf gut". Nur spezifische, umsetzbare Insights, die der Nutzer wahrscheinlich noch nicht kennt. Maximal 3 Sätze, präzise und sofort umsetzbar. Jeden Tag ein anderer Schwerpunkt – abwechslungsreich halten.`
+- "coachTipTitle": eine kurze, prägnante Überschrift für den Tipp (mit Anführungszeichen)
+- "coachTipBody": Ein allgemeiner, NICHT datenbasierter Tipp: spezifische, wenig bekannte Insights aus Training, Ernährung, Regeneration, Schlaf, mentaler Stärke oder Supplementen. KEINE 0815-Tipps wie "trink mehr Wasser". Maximal 3 Sätze, sofort umsetzbar. Jeden Tag anderer Schwerpunkt – abwechslungsreich.`
 
-    const todayISO = new Date().toISOString().slice(0, 10)
-    const userPrompt = `Heute: ${todayISO} (${weekday}). Profil: Ziel ${goal}, ${age} Jahre, ${gender === 'm' ? 'männlich' : 'weiblich'}, ${height} cm, ${weight} kg, Aktivität ${activityLevel}, ${trainingDaysPerWeek}x Training pro Woche. Tagesziel: ca. ${calorieTarget} kcal, Protein mind. ${proteinTarget} g.
+      const tipUserPrompt = `Heute ist ${weekday}. Generiere das JSON für Begrüßung, Trainingstag und einen allgemeinen Coach-Tipp (ohne Nutzerdaten).`
 
-Letzte Check-ins (mit Ernährungsdaten wo erfasst):
-${checkinsSummary || 'Noch keine Check-ins.'}
-${nutritionHint}
+      const tipCompletion = await openai.chat.completions.create({
+        model: 'gpt-4o',
+        messages: [
+          { role: 'system', content: tipSystemPrompt },
+          { role: 'user', content: tipUserPrompt },
+        ],
+        response_format: { type: 'json_object' },
+        temperature: 0.7,
+      })
 
-Generiere das JSON für das Daily Briefing. Wähle für coachTipTitle und coachTipBody einen anderen Schwerpunkt als an typischen "Motivations-Tagen" – abwechslungsreich und inhaltlich wertvoll.`
-
-    const completion = await openai.chat.completions.create({
-      model: 'gpt-4o',
-      messages: [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: userPrompt },
-      ],
-      response_format: { type: 'json_object' },
-      temperature: 0.7,
-    })
-
-    const content = completion.choices[0]?.message?.content
-    if (!content) {
-      return NextResponse.json(
-        { error: 'Keine Antwort von der KI' },
-        { status: 500 }
-      )
+      const tipContent = tipCompletion.choices[0]?.message?.content
+      if (tipContent) {
+        try {
+          const parsed = JSON.parse(tipContent) as Record<string, unknown>
+          greeting = (parsed.greeting as string) ?? defaultTip.greeting
+          trainingDay = (parsed.trainingDay as string) ?? defaultTip.trainingDay
+          trainingSubtext = (parsed.trainingSubtext as string) ?? defaultTip.trainingSubtext
+          coachTipTitle = ((parsed.coachTipTitle as string) ?? defaultTip.coachTipTitle).replace(/^["']|["']$/g, '')
+          coachTipBody = (parsed.coachTipBody as string) ?? defaultTip.coachTipBody
+        } catch {
+          // keep defaults
+        }
+      }
     }
 
-    let aiData: {
-      greeting?: string
-      trainingDay?: string
-      trainingSubtext?: string
-      coachTipTitle?: string
-      coachTipBody?: string
-    }
-    try {
-      aiData = JSON.parse(content)
-    } catch {
-      aiData = {
-        greeting: 'Willkommen zurück.',
-        trainingDay: 'Oberkörper',
-        trainingSubtext: 'Fokus auf saubere Ausführung.',
-        coachTipTitle: '"Gewinn den Tag mit den ersten 2 Sätzen."',
-        coachTipBody: 'Konzentriere dich auf die ersten Sätze jeder Hauptübung – sauber und kontrolliert.',
+    // 2. Check-In Analyse (nur Nutzerdaten) – nur wenn mind. 1 Check-in und nicht only=tip
+    if (only !== 'tip' && hasCheckins) {
+      const calorieTarget = targetCalories
+      const proteinTarget = Math.round(weight * 2)
+      const analysisSystemPrompt = `Du bist ein datenorientierter Fitness- und Ernährungscoach. Antworte ausschließlich auf Deutsch.
+Deine Antwort muss valides JSON sein mit exakt diesen Feldern (kein anderer Text):
+- "analysisTitle": eine kurze, prägnante Überschrift der Analyse (mit Anführungszeichen)
+- "analysisBody": Konkrete Analyse und Handlungsempfehlungen NUR basierend auf den angegebenen Check-in-Daten. Analysiere: Kalorien (Aufnahme vs. Ziel), Makros (Protein/Carbs/Fett), Gesamtverbrauch, Aktivität. Gib 2–4 konkrete, umsetzbare Empfehlungen. Keine allgemeinen Floskeln – nur was aus den Zahlen folgt. Maximal 5 Sätze.`
+
+      const analysisUserPrompt = `Profil-Ziel: ${goal}. Tagesziel: ca. ${calorieTarget} kcal, mind. ${proteinTarget} g Protein. Makros-Ziel: ${macros.protein} g Protein, ${macros.carbs} g Carbs, ${macros.fat} g Fett.
+
+Letzte Check-ins (alle eingetragenen Daten):
+${checkinsSummary}
+
+Analysiere ausschließlich diese Daten und gib konkrete Handlungsempfehlungen.`
+
+      const analysisCompletion = await openai.chat.completions.create({
+        model: 'gpt-4o',
+        messages: [
+          { role: 'system', content: analysisSystemPrompt },
+          { role: 'user', content: analysisUserPrompt },
+        ],
+        response_format: { type: 'json_object' },
+        temperature: 0.5,
+      })
+
+      const analysisContent = analysisCompletion.choices[0]?.message?.content
+      if (analysisContent) {
+        try {
+          const parsed = JSON.parse(analysisContent) as Record<string, unknown>
+          analysisTitle = ((parsed.analysisTitle as string) ?? '').replace(/^["']|["']$/g, '')
+          analysisBody = (parsed.analysisBody as string) ?? ''
+        } catch {
+          // leave null
+        }
       }
     }
 
@@ -246,11 +278,14 @@ Generiere das JSON für das Daily Briefing. Wähle für coachTipTitle und coachT
         carbs: macros.carbs,
         fat: macros.fat,
       },
-      greeting: aiData.greeting ?? 'Willkommen zurück.',
-      trainingDay: aiData.trainingDay ?? 'Oberkörper',
-      trainingSubtext: aiData.trainingSubtext ?? 'Fokus auf saubere Ausführung.',
-      coachTipTitle: (aiData.coachTipTitle ?? '').replace(/^["']|["']$/g, ''),
-      coachTipBody: aiData.coachTipBody ?? '',
+      greeting,
+      trainingDay,
+      trainingSubtext,
+      coachTipTitle,
+      coachTipBody,
+      hasCheckins,
+      analysisTitle,
+      analysisBody,
     })
   } catch (err) {
     console.error('❌ API briefing:', err)

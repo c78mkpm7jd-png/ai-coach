@@ -20,6 +20,9 @@ type BriefingData = {
   trainingSubtext: string;
   coachTipTitle: string;
   coachTipBody: string;
+  hasCheckins?: boolean;
+  analysisTitle: string | null;
+  analysisBody: string | null;
 };
 
 export default function DashboardPage() {
@@ -29,21 +32,52 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [refreshingTip, setRefreshingTip] = useState(false);
+  const [refreshingAnalysis, setRefreshingAnalysis] = useState(false);
 
-  function refreshCoachTip() {
-    if (refreshingTip) return;
+  function refreshTipOfDay() {
+    if (refreshingTip || !briefing) return;
     setRefreshingTip(true);
-    fetch("/api/briefing")
+    fetch("/api/briefing?only=tip")
       .then((res) => {
         if (res.status === 404) return null;
         if (!res.ok) throw new Error("Fehler beim Laden");
         return res.json();
       })
       .then((data) => {
-        if (data) setBriefing(data);
+        if (data)
+          setBriefing((prev) =>
+            prev
+              ? { ...prev, coachTipTitle: data.coachTipTitle, coachTipBody: data.coachTipBody }
+              : data
+          );
       })
       .catch(() => {})
       .finally(() => setRefreshingTip(false));
+  }
+
+  function refreshAnalysis() {
+    if (refreshingAnalysis || !briefing) return;
+    setRefreshingAnalysis(true);
+    fetch("/api/briefing?only=analysis")
+      .then((res) => {
+        if (res.status === 404) return null;
+        if (!res.ok) throw new Error("Fehler beim Laden");
+        return res.json();
+      })
+      .then((data) => {
+        if (data)
+          setBriefing((prev) =>
+            prev
+              ? {
+                  ...prev,
+                  analysisTitle: data.analysisTitle ?? null,
+                  analysisBody: data.analysisBody ?? null,
+                }
+              : data
+          );
+      })
+      .catch(() => {})
+      .finally(() => setRefreshingAnalysis(false));
   }
 
   useEffect(() => {
@@ -178,17 +212,17 @@ export default function DashboardPage() {
           </div>
 
           <aside className="space-y-4">
-            <section className="h-full rounded-2xl border border-white/10 bg-gradient-to-b from-white/10 to-white/5 p-5">
+            <section className="rounded-2xl border border-white/10 bg-gradient-to-b from-white/10 to-white/5 p-5">
               <div className="flex items-center justify-between gap-2">
                 <p className="text-xs font-medium uppercase tracking-[0.16em] text-white/50">
-                  Coach-Tipp für heute
+                  TIPP DES TAGES
                 </p>
                 <button
                   type="button"
-                  onClick={refreshCoachTip}
+                  onClick={refreshTipOfDay}
                   disabled={refreshingTip}
                   className="flex min-h-[44px] min-w-[44px] shrink-0 items-center justify-center rounded-lg text-white/50 transition hover:bg-white/10 hover:text-white disabled:pointer-events-none touch-manipulation"
-                  aria-label="Neuen Coach-Tipp laden"
+                  aria-label="Neuen Tipp laden"
                 >
                   <svg
                     className={`h-5 w-5 ${refreshingTip ? "animate-spin" : ""}`}
@@ -213,6 +247,44 @@ export default function DashboardPage() {
                 {briefing?.coachTipBody || "Kein Tipp verfügbar."}
               </p>
             </section>
+
+            {briefing?.hasCheckins && (
+              <section className="rounded-2xl border border-white/10 bg-gradient-to-b from-white/10 to-white/5 p-5">
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-xs font-medium uppercase tracking-[0.16em] text-white/50">
+                    DEINE ANALYSE
+                  </p>
+                  <button
+                    type="button"
+                    onClick={refreshAnalysis}
+                    disabled={refreshingAnalysis}
+                    className="flex min-h-[44px] min-w-[44px] shrink-0 items-center justify-center rounded-lg text-white/50 transition hover:bg-white/10 hover:text-white disabled:pointer-events-none touch-manipulation"
+                    aria-label="Analyse neu laden"
+                  >
+                    <svg
+                      className={`h-5 w-5 ${refreshingAnalysis ? "animate-spin" : ""}`}
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                      aria-hidden
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
+                      />
+                    </svg>
+                  </button>
+                </div>
+                <h2 className="mt-2 text-sm font-semibold text-white">
+                  {briefing.analysisTitle ? `„${briefing.analysisTitle}"` : "—"}
+                </h2>
+                <p className="mt-3 text-sm leading-relaxed text-white/75">
+                  {briefing.analysisBody || "Keine Analyse verfügbar."}
+                </p>
+              </section>
+            )}
           </aside>
         </div>
       )}
