@@ -119,6 +119,7 @@ export default function Sidebar() {
         </Link>
         <div className="flex items-center gap-3 rounded-lg px-3 py-2.5">
           <UserButton
+            fallback={<span className="h-8 w-8 rounded-full bg-white/10" aria-hidden />}
             appearance={{
               elements: {
                 avatarBox: "w-8 h-8",

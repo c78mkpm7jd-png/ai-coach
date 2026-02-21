@@ -1,4 +1,4 @@
-import Sidebar from "@/components/layout/Sidebar";
+import SidebarWrapper from "@/components/layout/SidebarWrapper";
 import BottomNav from "@/components/layout/BottomNav";
 
 export default function AppLayout({
@@ -8,7 +8,7 @@ export default function AppLayout({
 }) {
   return (
     <div className="flex min-h-screen bg-zinc-950 text-white">
-      <Sidebar />
+      <SidebarWrapper />
       <main className="min-h-screen flex-1 overflow-auto pb-20 md:pb-0">
         {children}
       </main>
