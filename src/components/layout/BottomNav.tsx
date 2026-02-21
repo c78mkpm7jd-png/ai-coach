@@ -52,7 +52,7 @@ export default function BottomNav() {
 
   return (
     <nav
-      className="fixed bottom-0 left-0 right-0 z-50 flex items-center justify-around border-t border-white/10 bg-zinc-950/95 px-2 pb-[env(safe-area-inset-bottom)] pt-2 md:hidden"
+      className="flex w-full items-center justify-around border-t border-white/10 bg-zinc-950 px-2 pt-2 pb-[max(0.5rem,env(safe-area-inset-bottom))]"
       role="navigation"
       aria-label="Hauptnavigation"
     >

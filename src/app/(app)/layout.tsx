@@ -12,7 +12,10 @@ export default function AppLayout({
       <main className="min-h-screen flex-1 overflow-auto pb-20 md:pb-0">
         {children}
       </main>
-      <BottomNav />
+      {/* Mobile Bottom Navigation: Sichtbarkeit über globals.css (.mobile-bottom-nav), nicht über Tailwind – funktioniert zuverlässig in Production */}
+      <div className="mobile-bottom-nav fixed bottom-0 left-0 right-0 z-[100]">
+        <BottomNav />
+      </div>
     </div>
   );
 }

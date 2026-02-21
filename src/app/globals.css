@@ -24,3 +24,13 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+/* Mobile Bottom Navigation: sichtbar unter 768px, auf Desktop ausblenden (unabhängig von Tailwind, immer im Build) */
+.mobile-bottom-nav {
+  display: block;
+}
+@media (min-width: 768px) {
+  .mobile-bottom-nav {
+    display: none !important;
+  }
+}
