@@ -59,7 +59,7 @@ export default function MessageChart({ chart }: { chart: ChartPayload }) {
             <Tooltip
               contentStyle={{ backgroundColor: "#18181b", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 8 }}
               labelFormatter={(label: any) => formatDateShort(label as string)}
-              formatter={(value: number | undefined) => [`${value ?? 0} kg`, "Gewicht"]}
+              formatter={(value: number | undefined, name: string) => [`${value ?? 0} kg`, "Gewicht"]}
               labelStyle={{ color: "rgba(255,255,255,0.8)" }}
             />
             <Line type="monotone" dataKey="weight" stroke={CHART_COLORS.weight} strokeWidth={2} dot={{ fill: CHART_COLORS.weight, r: 3 }} name="Gewicht (kg)" />
@@ -83,7 +83,7 @@ export default function MessageChart({ chart }: { chart: ChartPayload }) {
             <Tooltip
               contentStyle={{ backgroundColor: "#18181b", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 8 }}
               labelFormatter={(label: any) => formatDateShort(label as string)}
-              formatter={(value: number, name: string) => [value, name === "calories" ? "Kcal" : name === "protein" ? "Protein (g)" : name === "carbs" ? "Carbs (g)" : "Fett (g)"]}
+              formatter={(value: number | undefined, name: string) => [value ?? 0, name === "calories" ? "Kcal" : name === "protein" ? "Protein (g)" : name === "carbs" ? "Carbs (g)" : "Fett (g)"]}
               labelStyle={{ color: "rgba(255,255,255,0.8)" }}
             />
             <Legend wrapperStyle={{ fontSize: 10 }} formatter={(v) => (v === "calories" ? "Kcal" : v === "protein" ? "Protein" : v === "carbs" ? "Carbs" : "Fett")} />
@@ -109,8 +109,8 @@ export default function MessageChart({ chart }: { chart: ChartPayload }) {
             <Tooltip
               contentStyle={{ backgroundColor: "#18181b", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 8 }}
               labelFormatter={(label: any) => formatDateShort(label as string)}
-              formatter={(value: number, _: unknown, props: { payload: { label: string; duration: number; calories: number } }) => [
-                value ? `${value} min` : (props.payload.calories ? `${props.payload.calories} kcal` : props.payload.label),
+              formatter={(value: number | undefined, _: unknown, props: { payload: { label: string; duration: number; calories: number } }) => [
+                value != null ? `${value} min` : (props.payload.calories ? `${props.payload.calories} kcal` : props.payload.label),
                 "Aktivität",
               ]}
               labelStyle={{ color: "rgba(255,255,255,0.8)" }}
@@ -134,7 +134,7 @@ export default function MessageChart({ chart }: { chart: ChartPayload }) {
             <Tooltip
               contentStyle={{ backgroundColor: "#18181b", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 8 }}
               labelFormatter={(label: any) => formatDateShort(label as string)}
-              formatter={(value: number, name: string) => [value, name === "energy" ? "Energie" : "Hunger"]}
+              formatter={(value: number | undefined, name: string) => [value ?? 0, name === "energy" ? "Energie" : "Hunger"]}
               labelStyle={{ color: "rgba(255,255,255,0.8)" }}
             />
             <Line type="monotone" dataKey="energy" stroke={CHART_COLORS.energy} strokeWidth={2} dot={{ fill: CHART_COLORS.energy, r: 3 }} name="Energie" />
@@ -171,7 +171,7 @@ export default function MessageChart({ chart }: { chart: ChartPayload }) {
             </Pie>
             <Tooltip
               contentStyle={{ backgroundColor: "#18181b", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 8 }}
-              formatter={(value: number, name: string) => [`${value} g`, name]}
+              formatter={(value: number | undefined, name: string) => [`${value ?? 0} g`, name]}
               labelStyle={{ color: "rgba(255,255,255,0.8)" }}
             />
           </PieChart>
