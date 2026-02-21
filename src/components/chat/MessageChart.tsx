@@ -59,7 +59,7 @@ export default function MessageChart({ chart }: { chart: ChartPayload }) {
             <Tooltip
               contentStyle={{ backgroundColor: "#18181b", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 8 }}
               labelFormatter={(label: any) => formatDateShort(label as string)}
-              formatter={(value: number) => [`${value} kg`, "Gewicht"]}
+              formatter={(value: number | undefined) => [`${value ?? 0} kg`, "Gewicht"]}
               labelStyle={{ color: "rgba(255,255,255,0.8)" }}
             />
             <Line type="monotone" dataKey="weight" stroke={CHART_COLORS.weight} strokeWidth={2} dot={{ fill: CHART_COLORS.weight, r: 3 }} name="Gewicht (kg)" />
