@@ -20,7 +20,7 @@ export default function WeeklyReportPage() {
   };
 
   return (
-    <div className="mx-auto flex min-h-full max-w-6xl flex-col px-6 py-10">
+    <div className="mx-auto flex min-h-full max-w-6xl flex-col px-4 py-6 sm:px-6 sm:py-10">
       <header className="mb-8 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div className="space-y-1">
           <p className="text-xs font-medium uppercase tracking-[0.2em] text-white/40">

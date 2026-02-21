@@ -69,7 +69,7 @@ export default function DashboardPage() {
   const macros = briefing?.macros ?? { calories: 0, protein: 0, carbs: 0, fat: 0 };
 
   return (
-    <div className="mx-auto flex min-h-full max-w-6xl flex-col px-6 py-10">
+    <div className="mx-auto flex min-h-full max-w-6xl flex-col px-4 py-6 sm:px-6 sm:py-10">
       <header className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div className="space-y-2">
           <p className="text-xs font-medium uppercase tracking-[0.2em] text-white/40">
@@ -187,11 +187,11 @@ export default function DashboardPage() {
                   type="button"
                   onClick={refreshCoachTip}
                   disabled={refreshingTip}
-                  className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-white/50 transition hover:bg-white/10 hover:text-white disabled:pointer-events-none"
+                  className="flex min-h-[44px] min-w-[44px] shrink-0 items-center justify-center rounded-lg text-white/50 transition hover:bg-white/10 hover:text-white disabled:pointer-events-none touch-manipulation"
                   aria-label="Neuen Coach-Tipp laden"
                 >
                   <svg
-                    className={`h-4 w-4 ${refreshingTip ? "animate-spin" : ""}`}
+                    className={`h-5 w-5 ${refreshingTip ? "animate-spin" : ""}`}
                     fill="none"
                     stroke="currentColor"
                     viewBox="0 0 24 24"

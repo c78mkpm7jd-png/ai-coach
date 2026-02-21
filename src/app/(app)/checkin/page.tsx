@@ -63,7 +63,7 @@ export default function CheckinPage() {
   }
 
   return (
-    <div className="mx-auto flex min-h-full max-w-4xl flex-col justify-center px-6 py-16">
+    <div className="mx-auto flex min-h-full max-w-4xl flex-col justify-center px-4 py-8 sm:px-6 sm:py-16">
       <div className="mb-8 flex items-center justify-between gap-4 text-sm text-white/60">
         <Link href="/dashboard" className="hover:text-white/80">
           ← Zurück zum Dashboard

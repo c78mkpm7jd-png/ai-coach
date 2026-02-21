@@ -97,7 +97,7 @@ export default function ChatPage() {
   }
 
   return (
-    <div className="flex h-[calc(100vh-0px)] flex-col bg-zinc-950">
+    <div className="flex h-[calc(100svh-5rem)] flex-col bg-zinc-950 md:h-screen">
       <header className="shrink-0 border-b border-white/10 px-4 py-3">
         <p className="text-xs font-medium uppercase tracking-[0.2em] text-white/40">
           Assistent
