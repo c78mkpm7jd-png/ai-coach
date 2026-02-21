@@ -28,13 +28,13 @@ const activityMultiplier: Record<string, number> = {
   aktiv: 1.55,
 }
 
-// TDEE und Ziel-Kalorien je nach Ziel
+// TDEE und Ziel-Kalorien je nach Ziel: Bulk +300, Cut -400, Recomp/Maintain = TDEE
 function getTargetCalories(tdee: number, goal: string): number {
   switch (goal) {
     case 'lean-bulk':
-      return Math.round(tdee + 250)
+      return Math.round(tdee + 300)
     case 'cut':
-      return Math.round(tdee - 500)
+      return Math.round(tdee - 400)
     case 'recomp':
     case 'maintain':
     default:
@@ -111,15 +111,12 @@ export async function GET() {
     const activityLevel = String(profile.activity_level || 'sitzend')
     const goal = String(profile.goal || 'maintain')
 
-    // TDEE: Wenn Gesamtverbrauch (Garmin) in Check-ins eingetragen wurde, diesen nutzen; sonst aus Profil berechnen
-    const garminBurnList = (checkins as { activity_calories_burned?: number | null }[])
-      .map((c) => c.activity_calories_burned)
-      .filter((v): v is number => typeof v === 'number' && v > 0)
-    const hasGarminTdee = garminBurnList.length > 0
+    // TDEE: Wenn Gesamtverbrauch in einem Check-in eingetragen wurde, diesen direkt als TDEE nutzen (kein Profil-TDEE); sonst aus Profil berechnen
+    const checkinsWithBurn = checkins as { activity_calories_burned?: number | null }[]
+    const latestBurn = checkinsWithBurn.find((c) => typeof c.activity_calories_burned === 'number' && c.activity_calories_burned > 0)
+    const hasGarminTdee = latestBurn != null
     const tdee = hasGarminTdee
-      ? Math.round(
-          garminBurnList.reduce((a, b) => a + b, 0) / garminBurnList.length
-        )
+      ? Math.round(Number(latestBurn.activity_calories_burned))
       : (() => {
           const bmrVal = bmr(weight, height, age, gender === 'w')
           const multiplier = activityMultiplier[activityLevel] ?? 1.2
