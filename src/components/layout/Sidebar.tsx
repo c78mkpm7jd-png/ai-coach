@@ -54,27 +54,25 @@ const navItems = [
   { href: "/profil", label: "Einstellungen", icon: SettingsIcon },
 ];
 
-type SidebarProps = {
-  isDrawer?: boolean;
-  onClose?: () => void;
-};
-
-export default function Sidebar({ isDrawer, onClose }: SidebarProps) {
+export default function Sidebar() {
   const pathname = usePathname();
   const [open, setOpen] = useState(true);
-  const expanded = isDrawer ? true : open;
 
-  const content = (
-    <>
+  return (
+    <aside
+      className={`flex shrink-0 flex-col border-r border-white/10 bg-zinc-950 text-white transition-[width] duration-200 ${
+        open ? "w-56" : "w-16"
+      }`}
+    >
       <div className="flex h-14 items-center border-b border-white/10 px-3">
         <button
           type="button"
-          onClick={isDrawer ? onClose : () => setOpen((o) => !o)}
+          onClick={() => setOpen((o) => !o)}
           className="flex h-9 w-9 items-center justify-center rounded-lg text-white/70 hover:bg-white/10 hover:text-white"
-          aria-label={isDrawer ? "Menü schließen" : open ? "Sidebar einklappen" : "Sidebar aufklappen"}
+          aria-label={open ? "Sidebar einklappen" : "Sidebar aufklappen"}
         >
           <svg
-            className={`h-5 w-5 transition-transform ${expanded && !isDrawer ? "" : "rotate-180"}`}
+            className={`h-5 w-5 transition-transform ${open ? "" : "rotate-180"}`}
             fill="none"
             stroke="currentColor"
             viewBox="0 0 24 24"
@@ -82,7 +80,7 @@ export default function Sidebar({ isDrawer, onClose }: SidebarProps) {
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 19l-7-7 7-7M18 19l-7-7 7-7" />
           </svg>
         </button>
-        {expanded && (
+        {open && (
           <span className="ml-2 truncate text-sm font-medium text-white/90">AI Fitness Coach</span>
         )}
       </div>
@@ -94,7 +92,6 @@ export default function Sidebar({ isDrawer, onClose }: SidebarProps) {
             <Link
               key={href}
               href={href}
-              onClick={isDrawer ? onClose : undefined}
               className={`flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition ${
                 isActive
                   ? "bg-white/10 text-white"
@@ -102,7 +99,7 @@ export default function Sidebar({ isDrawer, onClose }: SidebarProps) {
               }`}
             >
               <Icon />
-              {expanded && <span className="truncate">{label}</span>}
+              {open && <span className="truncate">{label}</span>}
             </Link>
           );
         })}
@@ -111,7 +108,6 @@ export default function Sidebar({ isDrawer, onClose }: SidebarProps) {
       <div className="border-t border-white/10 p-2 space-y-1">
         <Link
           href="/checkin"
-          onClick={isDrawer ? onClose : undefined}
           className={`flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition ${
             pathname === "/checkin"
               ? "bg-white/10 text-white"
@@ -119,7 +115,7 @@ export default function Sidebar({ isDrawer, onClose }: SidebarProps) {
           }`}
         >
           <ClipboardIcon />
-          {expanded && <span className="truncate">Check-in</span>}
+          {open && <span className="truncate">Check-in</span>}
         </Link>
         <div className="flex items-center gap-3 rounded-lg px-3 py-2.5">
           <UserButton
@@ -134,43 +130,16 @@ export default function Sidebar({ isDrawer, onClose }: SidebarProps) {
               },
             }}
           />
-          {expanded && (
+          {open && (
             <Link
               href="/profil"
               className="truncate text-sm font-medium text-white/70 hover:text-white"
-              onClick={isDrawer ? onClose : undefined}
             >
               Profil
             </Link>
           )}
         </div>
       </div>
-    </>
-  );
-
-  if (isDrawer && onClose) {
-    return (
-      <>
-        <button
-          type="button"
-          onClick={onClose}
-          className="fixed inset-0 z-40 bg-black/50 md:hidden"
-          aria-label="Menü schließen"
-        />
-        <aside className="fixed left-0 top-0 bottom-0 z-50 flex w-56 flex-col border-r border-white/10 bg-zinc-950 text-white md:hidden">
-          {content}
-        </aside>
-      </>
-    );
-  }
-
-  return (
-    <aside
-      className={`hidden md:flex flex-col border-r border-white/10 bg-zinc-950 text-white transition-[width] duration-200 ${
-        open ? "w-56" : "w-16"
-      }`}
-    >
-      {content}
     </aside>
   );
 }
