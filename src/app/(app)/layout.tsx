@@ -1,7 +1,7 @@
 import SidebarWrapper from "@/components/layout/SidebarWrapper";
 import AppGuard from "@/components/layout/AppGuard";
 import { SidebarProvider } from "@/components/layout/SidebarContext";
-import MainWithSwipe from "@/components/layout/MainWithSwipe";
+import MainContentWithOverlayLock from "@/components/layout/MainContentWithOverlayLock";
 
 export default function AppLayout({
   children,
@@ -13,7 +13,7 @@ export default function AppLayout({
       <SidebarProvider>
         <div className="flex min-h-screen bg-zinc-950 text-white">
           <SidebarWrapper />
-          <MainWithSwipe>{children}</MainWithSwipe>
+          <MainContentWithOverlayLock>{children}</MainContentWithOverlayLock>
         </div>
       </SidebarProvider>
     </AppGuard>

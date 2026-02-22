@@ -1,10 +1,17 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { UserButton } from "@clerk/nextjs";
 import { useSidebar, SIDEBAR_WIDTH_PX } from "./SidebarContext";
+
+const CLOSED_X = -SIDEBAR_WIDTH_PX;
+const HALF_OPEN_X = -SIDEBAR_WIDTH_PX / 2;
+
+function clamp(x: number, min: number, max: number) {
+  return Math.min(max, Math.max(min, x));
+}
 
 const iconClass = "w-5 h-5 shrink-0";
 
@@ -123,9 +130,59 @@ function SidebarContent({
 export default function Sidebar() {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
-  const { mobileOpen, setMobileOpen, sidebarTranslateX, isDragging } = useSidebar();
+  const {
+    mobileOpen,
+    setMobileOpen,
+    sidebarTranslateX,
+    setSidebarTranslateX,
+    isDragging,
+    setIsDragging,
+  } = useSidebar();
+  const touchStartX = useRef<number | null>(null);
+  const touchStartTranslateX = useRef<number>(CLOSED_X);
+  const lastTranslateX = useRef<number>(CLOSED_X);
+  const didDragRef = useRef(false);
 
   const closeMobile = () => setMobileOpen(false);
+
+  const handleBackdropClick = () => {
+    if (didDragRef.current) {
+      didDragRef.current = false;
+      return;
+    }
+    closeMobile();
+  };
+
+  const onBackdropTouchStart = (e: React.TouchEvent) => {
+    const x = e.targetTouches[0]?.clientX;
+    if (x == null) return;
+    touchStartX.current = x;
+    touchStartTranslateX.current = sidebarTranslateX;
+    lastTranslateX.current = sidebarTranslateX;
+    setIsDragging(true);
+  };
+
+  const onBackdropTouchMove = (e: React.TouchEvent) => {
+    const startX = touchStartX.current;
+    if (startX == null) return;
+    didDragRef.current = true;
+    const currentX = e.targetTouches[0]?.clientX ?? startX;
+    const deltaX = currentX - startX;
+    const nextX = clamp(touchStartTranslateX.current + deltaX, CLOSED_X, 0);
+    lastTranslateX.current = nextX;
+    setSidebarTranslateX(nextX);
+  };
+
+  const onBackdropTouchEnd = () => {
+    const current = lastTranslateX.current;
+    touchStartX.current = null;
+    setIsDragging(false);
+    if (current > HALF_OPEN_X) {
+      setMobileOpen(true);
+    } else {
+      setMobileOpen(false);
+    }
+  };
 
   return (
     <>
@@ -161,14 +218,20 @@ export default function Sidebar() {
       {/* Mobile: Overlay wenn offen oder während Drag; Sidebar folgt translateX */}
       {(mobileOpen || isDragging) && (
         <div className="fixed inset-0 z-50 md:hidden" aria-modal="true" role="dialog">
-          <button
-            type="button"
+          <div
+            role="button"
+            tabIndex={0}
             aria-label="Menü schließen"
             className="absolute inset-0 bg-black transition-opacity duration-300 ease-out"
             style={{
               opacity: (SIDEBAR_WIDTH_PX + sidebarTranslateX) / SIDEBAR_WIDTH_PX * 0.6,
             }}
-            onClick={closeMobile}
+            onClick={handleBackdropClick}
+            onTouchStart={onBackdropTouchStart}
+            onTouchMove={onBackdropTouchMove}
+            onTouchEnd={onBackdropTouchEnd}
+            onTouchCancel={onBackdropTouchEnd}
+            onKeyDown={(e) => e.key === "Enter" && handleBackdropClick()}
           />
           <aside
             className="absolute left-0 top-0 bottom-0 flex w-56 flex-col border-r border-white/10 bg-zinc-950 text-white shadow-xl"
