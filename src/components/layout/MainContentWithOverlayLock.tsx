@@ -25,7 +25,11 @@ export default function MainContentWithOverlayLock({
 
   return (
     <div
-      className={overlayActive ? "pointer-events-none min-h-screen min-w-0 flex-1" : "min-h-screen min-w-0 flex-1"}
+      className={
+        overlayActive
+          ? "fixed inset-0 z-0 min-h-screen min-w-0 flex-1 overflow-hidden pointer-events-none"
+          : "min-h-screen min-w-0 flex-1"
+      }
       aria-hidden={overlayActive}
     >
       <MainWithSwipe>{children}</MainWithSwipe>

@@ -26,6 +26,7 @@ export default function MainWithSwipe({ children }: { children: React.ReactNode 
   const onTouchStart = (e: React.TouchEvent) => {
     const x = e.targetTouches[0]?.clientX;
     if (x == null) return;
+    document.body.style.overflow = "hidden";
     touchStartX.current = x;
     touchStartTranslateX.current = sidebarTranslateX;
     lastTranslateX.current = sidebarTranslateX;

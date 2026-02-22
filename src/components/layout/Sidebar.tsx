@@ -156,6 +156,7 @@ export default function Sidebar() {
   const onBackdropTouchStart = (e: React.TouchEvent) => {
     const x = e.targetTouches[0]?.clientX;
     if (x == null) return;
+    document.body.style.overflow = "hidden";
     touchStartX.current = x;
     touchStartTranslateX.current = sidebarTranslateX;
     lastTranslateX.current = sidebarTranslateX;
