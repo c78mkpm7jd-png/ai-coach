@@ -3,18 +3,14 @@
 import { useState, useEffect, useMemo } from "react";
 import Link from "next/link";
 
-function toDateKey(s: string) {
-  return s.slice(0, 10);
-}
-
-type Row = { created_at: string; trained: boolean };
+type CalendarEvent = { date: string; type: "training" | "ruhetag" };
 
 const WEEKDAYS = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"];
 
 export default function KalenderPage() {
   const today = new Date();
   const [currentMonth, setCurrentMonth] = useState({ year: today.getFullYear(), month: today.getMonth() });
-  const [checkins, setCheckins] = useState<Row[]>([]);
+  const [events, setEvents] = useState<CalendarEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
@@ -22,25 +18,26 @@ export default function KalenderPage() {
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
-  const loadCheckins = () => {
+  const { year: y, month: m } = currentMonth;
+
+  const loadEvents = () => {
     setLoading(true);
-    fetch("/api/checkin?limit=60")
+    fetch(`/api/calendar?year=${y}&month=${m + 1}`)
       .then((r) => (r.ok ? r.json() : { data: [] }))
-      .then((d) => setCheckins(d?.data ?? []))
+      .then((d) => setEvents(d?.data ?? []))
       .finally(() => setLoading(false));
   };
 
   useEffect(() => {
-    loadCheckins();
-  }, []);
+    loadEvents();
+  }, [y, m]);
 
-  const checkinByDate = useMemo(() => {
-    const m = new Map<string, Row>();
-    checkins.forEach((c) => m.set(toDateKey(c.created_at), c));
-    return m;
-  }, [checkins]);
+  const eventByDate = useMemo(() => {
+    const map = new Map<string, CalendarEvent>();
+    events.forEach((e) => map.set(e.date, e));
+    return map;
+  }, [events]);
 
-  const { year: y, month: m } = currentMonth;
   const monthName = new Intl.DateTimeFormat("de-DE", { month: "long", year: "numeric" }).format(new Date(y, m, 1));
   const firstDay = new Date(y, m, 1);
   const lastDay = new Date(y, m + 1, 0);
@@ -76,18 +73,18 @@ export default function KalenderPage() {
     setDialogOpen(true);
   };
 
-  const selectedEntry = selectedDate ? checkinByDate.get(selectedDate) : null;
+  const selectedEntry = selectedDate ? eventByDate.get(selectedDate) : null;
 
   const handleSave = async (trained: boolean) => {
     if (!selectedDate || saving) return;
     setSaving(true);
     try {
-      const res = await fetch("/api/checkin/quick", {
+      const res = await fetch("/api/calendar", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           date: selectedDate,
-          trained,
+          type: trained ? "training" : "ruhetag",
           ...(recurringWeekday !== null && { recurringWeekday }),
         }),
       });
@@ -95,7 +92,7 @@ export default function KalenderPage() {
       if (!res.ok) throw new Error(data.error || "Fehler");
       setDialogOpen(false);
       setSelectedDate(null);
-      loadCheckins();
+      loadEvents();
     } catch (e) {
       alert(e instanceof Error ? e.message : "Fehler beim Speichern");
     } finally {
@@ -107,12 +104,12 @@ export default function KalenderPage() {
     if (!selectedDate || deleting) return;
     setDeleting(true);
     try {
-      const res = await fetch(`/api/checkin?date=${selectedDate}`, { method: "DELETE" });
+      const res = await fetch(`/api/calendar?date=${selectedDate}`, { method: "DELETE" });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Fehler");
       setDialogOpen(false);
       setSelectedDate(null);
-      loadCheckins();
+      loadEvents();
     } catch (e) {
       alert(e instanceof Error ? e.message : "Fehler beim Löschen");
     } finally {
@@ -135,7 +132,7 @@ export default function KalenderPage() {
         ← Dashboard
       </Link>
       <h1 className="mt-6 text-2xl font-semibold text-white">Kalender</h1>
-      <p className="mt-1 text-sm text-white/60">Tage markieren oder aus Check-ins</p>
+      <p className="mt-1 text-sm text-white/60">Tage als Training oder Ruhetag markieren (unabhängig von Check-ins)</p>
 
       <div className="mt-6 flex items-center justify-between rounded-xl border border-white/10 bg-white/5 p-4">
         <button
@@ -171,23 +168,23 @@ export default function KalenderPage() {
           {Array.from({ length: firstOffset }, (_, i) => (
             <div key={`e-${i}`} className="aspect-square rounded-lg" />
           ))}
-          {days.map(({ day, key, isToday, weekday }) => {
-            const c = checkinByDate.get(key);
+          {days.map(({ day, key, isToday }) => {
+            const e = eventByDate.get(key);
             let bg = "bg-white/10 text-white/50";
-            if (c) {
-              bg = c.trained ? "bg-emerald-500/40 text-emerald-100" : "bg-blue-500/40 text-blue-100";
+            if (e) {
+              bg = e.type === "training" ? "bg-emerald-500/40 text-emerald-100" : "bg-blue-500/40 text-blue-100";
             }
             return (
               <button
                 key={key}
                 type="button"
-                onClick={() => openDialog(key, weekday)}
+                onClick={() => openDialog(key, 0)}
                 className={`relative flex aspect-square items-center justify-center rounded-lg text-sm font-medium ${bg} ${
                   isToday ? "ring-2 ring-white ring-offset-2 ring-offset-zinc-950" : ""
                 } hover:ring-2 hover:ring-white/50`}
               >
                 {day}
-                {!c && <span className="absolute right-1 top-1 text-white/40">+</span>}
+                {!e && <span className="absolute right-1 top-1 text-white/40">+</span>}
               </button>
             );
           })}
@@ -200,13 +197,14 @@ export default function KalenderPage() {
             <span className="h-3 w-3 rounded bg-blue-500/50" /> Blau = Ruhetag
           </span>
           <span className="flex items-center gap-2">
-            <span className="h-3 w-3 rounded bg-white/20" /> Grau = kein Check-in
+            <span className="h-3 w-3 rounded bg-white/20" /> Grau = nicht markiert
           </span>
         </div>
       </div>
 
       <p className="mt-4 text-sm text-white/60">
-        Klicke auf einen Tag (oder +), um Training oder Ruhetag zu setzen.{" "}
+        Klicke auf einen Tag (oder +), um Training oder Ruhetag zu setzen. Diese Einträge sind nur für die Planung und
+        haben keinen Einfluss auf Check-ins.{" "}
         <Link href="/checkin" className="text-white/80 underline hover:text-white">
           Vollständigen Check-in erfassen
         </Link>
@@ -258,7 +256,9 @@ export default function KalenderPage() {
             </div>
             {selectedEntry && (
               <div className="mt-4 border-t border-white/10 pt-4">
-                <p className="text-xs text-white/50">Eintrag für diesen Tag: {selectedEntry.trained ? "Training" : "Ruhetag"}</p>
+                <p className="text-xs text-white/50">
+                  Eintrag für diesen Tag: {selectedEntry.type === "training" ? "Training" : "Ruhetag"}
+                </p>
                 <button
                   type="button"
                   disabled={deleting}

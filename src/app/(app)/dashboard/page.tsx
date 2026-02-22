@@ -82,6 +82,7 @@ export default function DashboardPage() {
   const today = new Date();
   const [briefing, setBriefing] = useState<BriefingData | null>(null);
   const [checkins, setCheckins] = useState<CheckinRow[]>([]);
+  const [calendarEvents, setCalendarEvents] = useState<{ date: string; type: "training" | "ruhetag" }[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [reminderModalOpen, setReminderModalOpen] = useState(false);
@@ -89,6 +90,8 @@ export default function DashboardPage() {
   const [reminderSaving, setReminderSaving] = useState(false);
 
   useEffect(() => {
+    const y = new Date().getFullYear();
+    const m = new Date().getMonth() + 1;
     Promise.all([
       fetch("/api/briefing").then((res) => {
         if (res.status === 404) {
@@ -98,10 +101,12 @@ export default function DashboardPage() {
         return res.ok ? res.json() : null;
       }),
       fetch("/api/checkin?limit=31").then((res) => (res.ok ? res.json() : { data: [] })),
+      fetch(`/api/calendar?year=${y}&month=${m}`).then((res) => (res.ok ? res.json() : { data: [] })),
     ])
-      .then(([b, c]) => {
+      .then(([b, c, cal]) => {
         if (b) setBriefing(b);
         setCheckins((c?.data ?? []).slice().reverse());
+        setCalendarEvents(cal?.data ?? []);
       })
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
@@ -175,6 +180,11 @@ export default function DashboardPage() {
     checkins.forEach((c) => m.set(toDateKey(c.created_at), c));
     return m;
   }, [checkins]);
+  const calendarEventByDate = useMemo(() => {
+    const m = new Map<string, { date: string; type: "training" | "ruhetag" }>();
+    calendarEvents.forEach((e) => m.set(e.date, e));
+    return m;
+  }, [calendarEvents]);
 
   const hasCaloriesData = caloriesLineData.length > 0 && caloriesLineData.some((d) => d.Verbrauch > 0 || d.Aufnahme > 0);
   const hasMacrosData = macrosLineData.length > 0 && macrosLineData.some((d) => d.Protein > 0 || d.Carbs > 0 || d.Fett > 0);
@@ -376,9 +386,9 @@ export default function DashboardPage() {
               <div key={`e-${i}`} className="aspect-square" />
             ))}
             {calendarDays.map(({ day, key, isToday }) => {
-              const c = checkinByDate.get(key);
+              const e = calendarEventByDate.get(key);
               let bg = "bg-white/10";
-              if (c) bg = c.trained ? "bg-emerald-500/40" : "bg-blue-500/40";
+              if (e) bg = e.type === "training" ? "bg-emerald-500/40" : "bg-blue-500/40";
               return (
                 <div
                   key={key}
@@ -392,7 +402,7 @@ export default function DashboardPage() {
           <div className="mt-2 flex flex-wrap gap-2 text-[9px] text-white/50">
             <span className="flex items-center gap-1"><span className="h-1.5 w-1.5 rounded bg-emerald-500/60" /> Grün = Training</span>
             <span className="flex items-center gap-1"><span className="h-1.5 w-1.5 rounded bg-blue-500/60" /> Blau = Ruhetag</span>
-            <span className="flex items-center gap-1"><span className="h-1.5 w-1.5 rounded bg-white/30" /> Grau = kein Check-in</span>
+            <span className="flex items-center gap-1"><span className="h-1.5 w-1.5 rounded bg-white/30" /> Grau = nicht markiert</span>
           </div>
         </Card>
 
