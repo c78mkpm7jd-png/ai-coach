@@ -185,6 +185,7 @@ export async function GET(request: Request) {
       trainingDay: 'Oberkörper',
       trainingSubtext: 'Fokus auf saubere Ausführung.',
       coachTipTitle: 'Gewinn den Tag mit den ersten 2 Sätzen.',
+      coachTipPreview: 'Die ersten Sätze jeder Übung entscheiden.',
       coachTipBody: 'Konzentriere dich auf die ersten Sätze jeder Hauptübung – sauber und kontrolliert.',
     }
 
@@ -193,8 +194,10 @@ export async function GET(request: Request) {
     let trainingSubtext = defaultTip.trainingSubtext
     let coachTipTitle = defaultTip.coachTipTitle
     let coachTipBody = defaultTip.coachTipBody
+    let coachTipPreviewRes = defaultTip.coachTipPreview
     let analysisTitle: string | null = null
     let analysisBody: string | null = null
+    let analysisPreviewRes: string | null = null
 
     // 1. Allgemeiner Tipp (ohne Nutzerdaten) – nur wenn nicht only=analysis
     if (only !== 'analysis') {
@@ -204,7 +207,8 @@ Deine Antwort muss valides JSON sein mit exakt diesen Feldern (kein anderer Text
 - "trainingDay": Name des heutigen Trainingstags (z.B. "Oberkörper", "Beine", "Push", "Pull", "Ganzkörper") passend zu ${trainingDaysPerWeek} Trainingstagen pro Woche. Heute ist ${weekday}.
 - "trainingSubtext": ein kurzer Satz Fokus/Hinweis für das heutige Training
 - "coachTipTitle": eine kurze, prägnante Überschrift für den Tipp (mit Anführungszeichen)
-- "coachTipBody": Ein allgemeiner, NICHT datenbasierter Tipp: spezifische, wenig bekannte Insights aus Training, Ernährung, Regeneration, Schlaf, mentaler Stärke oder Supplementen. KEINE 0815-Tipps wie "trink mehr Wasser". Maximal 3 Sätze, sofort umsetzbar. Jeden Tag anderer Schwerpunkt – abwechslungsreich.`
+- "coachTipPreview": Genau EIN spannender Satz, der neugierig macht (max. 15 Wörter). Wird nur auf der Dashboard-Card angezeigt. Kein Spoiler des vollen Tipps.
+- "coachTipBody": Der vollständige Tipp: spezifische, wenig bekannte Insights aus Training, Ernährung, Regeneration, Schlaf, mentaler Stärke oder Supplementen. KEINE 0815-Tipps. Exakt 3–4 Sätze, sofort umsetzbar. Wird nur auf der Detailseite angezeigt.`
 
       const tipUserPrompt = `Heute ist ${weekday}. Generiere das JSON für Begrüßung, Trainingstag und einen allgemeinen Coach-Tipp (ohne Nutzerdaten).`
 
@@ -227,6 +231,8 @@ Deine Antwort muss valides JSON sein mit exakt diesen Feldern (kein anderer Text
           trainingSubtext = (parsed.trainingSubtext as string) ?? defaultTip.trainingSubtext
           coachTipTitle = ((parsed.coachTipTitle as string) ?? defaultTip.coachTipTitle).replace(/^["']|["']$/g, '')
           coachTipBody = (parsed.coachTipBody as string) ?? defaultTip.coachTipBody
+          const coachTipPreview = (parsed.coachTipPreview as string)?.trim()
+          if (coachTipPreview) coachTipPreviewRes = coachTipPreview
         } catch {
           // keep defaults
         }
@@ -240,7 +246,8 @@ Deine Antwort muss valides JSON sein mit exakt diesen Feldern (kein anderer Text
       const analysisSystemPrompt = `Du bist ein datenorientierter Fitness- und Ernährungscoach. Antworte ausschließlich auf Deutsch.
 Deine Antwort muss valides JSON sein mit exakt diesen Feldern (kein anderer Text):
 - "analysisTitle": eine kurze, prägnante Überschrift der Analyse (mit Anführungszeichen)
-- "analysisBody": Konkrete Analyse und Handlungsempfehlungen NUR basierend auf den angegebenen Check-in-Daten. Analysiere: Kalorien (Aufnahme vs. Ziel), Makros (Protein/Carbs/Fett), Gesamtverbrauch, Aktivität. Gib 2–4 konkrete, umsetzbare Empfehlungen. Keine allgemeinen Floskeln – nur was aus den Zahlen folgt. Maximal 5 Sätze.`
+- "analysisPreview": Genau EIN spannender Satz basierend auf den Daten, der neugierig macht (max. 15 Wörter). Wird nur auf der Dashboard-Card angezeigt. Kein Spoiler der vollen Analyse.
+- "analysisBody": Die vollständige datenbasierte Analyse: NUR basierend auf den Check-in-Daten. Kalorien, Makros, Verbrauch, Aktivität. Konkrete, umsetzbare Empfehlungen. Exakt 3–4 Sätze. Wird nur auf der Detailseite angezeigt.`
 
       const analysisUserPrompt = `Profil-Ziel: ${goal}. Tagesziel: ca. ${calorieTarget} kcal, mind. ${proteinTarget} g Protein. Makros-Ziel: ${macros.protein} g Protein, ${macros.carbs} g Carbs, ${macros.fat} g Fett.
 
@@ -265,6 +272,8 @@ Analysiere ausschließlich diese Daten und gib konkrete Handlungsempfehlungen.`
           const parsed = JSON.parse(analysisContent) as Record<string, unknown>
           analysisTitle = ((parsed.analysisTitle as string) ?? '').replace(/^["']|["']$/g, '')
           analysisBody = (parsed.analysisBody as string) ?? ''
+          const ap = (parsed.analysisPreview as string)?.trim()
+          if (ap) analysisPreviewRes = ap
         } catch {
           // leave null
         }
@@ -283,9 +292,11 @@ Analysiere ausschließlich diese Daten und gib konkrete Handlungsempfehlungen.`
       trainingSubtext,
       coachTipTitle,
       coachTipBody,
+      coachTipPreview: coachTipPreviewRes || null,
       hasCheckins,
       analysisTitle,
       analysisBody,
+      analysisPreview: analysisPreviewRes,
     })
   } catch (err) {
     console.error('❌ API briefing:', err)
