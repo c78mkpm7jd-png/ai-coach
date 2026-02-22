@@ -29,8 +29,8 @@ function isAuthorized(request: Request): boolean {
 
 /**
  * GET /api/reminder
- * Wird täglich per Vercel Cron aufgerufen. Sendet Check-in Erinnerungs-Emails
- * an alle Nutzer, deren checkin_reminder_time zur aktuellen UTC-Uhrzeit passt.
+ * Wird stündlich per Vercel Cron aufgerufen (minute 0). Sendet Check-in Erinnerungs-Emails
+ * an alle Nutzer, deren checkin_reminder_time in der aktuellen UTC-Stunde liegt.
  */
 export async function GET(request: Request) {
   if (!isAuthorized(request)) {
@@ -44,9 +44,8 @@ export async function GET(request: Request) {
 
   try {
     const now = new Date()
-    const hour = now.getUTCHours()
-    const minute = now.getUTCMinutes()
-    const timeStr = `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`
+    const currentHour = now.getUTCHours()
+    const hourStr = String(currentHour).padStart(2, '0')
 
     const { data: profiles, error: profileError } = await supabaseAdmin
       .from('profiles')
@@ -60,7 +59,7 @@ export async function GET(request: Request) {
 
     const toSend = (profiles ?? []).filter((p) => {
       const t = p.checkin_reminder_time as string | undefined
-      return t && t.slice(0, 5) === timeStr
+      return t && t.startsWith(hourStr + ':')
     })
 
     const resend = new Resend(resendApiKey)
