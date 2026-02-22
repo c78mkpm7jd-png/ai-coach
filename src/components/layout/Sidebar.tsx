@@ -41,6 +41,14 @@ function SettingsIcon() {
   );
 }
 
+function UserIcon() {
+  return (
+    <svg className={iconClass} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+    </svg>
+  );
+}
+
 function ClipboardIcon() {
   return (
     <svg className={iconClass} fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -52,7 +60,8 @@ function ClipboardIcon() {
 const navItems = [
   { href: "/dashboard", label: "Dashboard", icon: GridIcon },
   { href: "/chat", label: "Coach", icon: ChatIcon },
-  { href: "/profil", label: "Einstellungen", icon: SettingsIcon },
+  { href: "/profil", label: "Profil", icon: UserIcon },
+  { href: "/einstellungen", label: "Einstellungen", icon: SettingsIcon },
 ];
 
 function SidebarContent({

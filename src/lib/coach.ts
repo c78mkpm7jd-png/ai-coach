@@ -4,6 +4,7 @@
  */
 
 import type { SupabaseClient } from "@supabase/supabase-js";
+import type { StravaActivity } from "@/lib/strava";
 
 export type Goal = "cut" | "lean-bulk" | "recomp" | "maintain";
 
@@ -430,12 +431,28 @@ export function formatMemoriesForPrompt(memories: CoachMemory[]): string {
   return `\n## Gedächtnis (bereits gespeichert – beziehe dich aktiv darauf; frage nicht erneut danach. z. B. "Du hast mal gesagt, …" / "Laut deinem Plan …")\n${lines}\n`;
 }
 
+/** Formatiert Strava-Aktivitäten der letzten 30 Tage für den Coach-Kontext (Trainingsmuster, Belastung, Fortschritt). */
+export function formatStravaActivitiesForPrompt(activities: StravaActivity[]): string {
+  if (activities.length === 0) return "";
+  const lines = activities.slice(0, 50).map((a) => {
+    const date = a.start_date.slice(0, 10);
+    const min = Math.round((a.moving_time || a.elapsed_time || 0) / 60);
+    const km = a.distance ? (a.distance / 1000).toFixed(1) : "–";
+    const hr = a.average_heartrate != null ? `${a.average_heartrate} Ø HF` : "";
+    const kcal = a.kilojoules != null ? `${Math.round(a.kilojoules / 4.184)} kcal` : a.calories != null ? `${a.calories} kcal` : "";
+    const parts = [date, a.type, a.name, `${min} min`, `${km} km`, a.total_elevation_gain ? `${Math.round(a.total_elevation_gain)} m ↑` : "", hr, kcal].filter(Boolean);
+    return `- ${parts.join(" · ")}`;
+  });
+  return `\n## Strava (letzte 30 Tage – nutze für Trainingsmuster, Belastung, Fortschritt)\n${lines.join("\n")}\n`;
+}
+
 /** Erzeugt die System-Prompt-Bausteine für den Chat (Dual-Mode + Analyse). */
 export function buildChatCoachContextBlock(
   ctx: CoachContext,
   signals: CoachSignals,
   checkinsSummary: string,
-  memories: CoachMemory[] = []
+  memories: CoachMemory[] = [],
+  stravaSummary = ""
 ): string {
   const { topPriorities, shouldStaySilent } = signals;
 
@@ -446,6 +463,10 @@ export function buildChatCoachContextBlock(
 - Check-ins (letzte 7): ${signals.checkinCount} vorhanden. Konfidenz: ${signals.confidence}
 ${checkinsSummary ? `\nCheck-in-Daten:\n${checkinsSummary}` : ""}
 `;
+
+  if (stravaSummary) {
+    block += stravaSummary;
+  }
 
   if (memories.length > 0) {
     block += formatMemoriesForPrompt(memories);

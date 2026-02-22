@@ -8,11 +8,13 @@ import {
   analyzeSignals,
   buildChatCoachContextBlock,
   getCoachMemories,
+  formatStravaActivitiesForPrompt,
   estimateTdee,
   getTargetCaloriesFromTdee,
   getMacrosSimple,
   type CheckinRow as CoachCheckinRow,
 } from "@/lib/coach";
+import { getStravaActivities } from "@/lib/strava";
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const supabaseServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
@@ -45,6 +47,7 @@ type ProfileRow = {
   activity_level?: string;
   training_days_per_week?: number;
   first_name?: string | null;
+  strava_connected?: boolean | null;
 };
 
 type CheckinRow = {
@@ -332,11 +335,22 @@ Jede Erwähnung von Plan/Übungen/Split als "trainingsplan" speichern. Maximal $
       })
       .join("\n");
 
+    let stravaSummary = "";
+    if (profile?.strava_connected) {
+      try {
+        const stravaActivities = await getStravaActivities(supabaseAdmin, userId);
+        stravaSummary = formatStravaActivitiesForPrompt(stravaActivities);
+      } catch (e) {
+        console.warn("Strava activities for coach:", e);
+      }
+    }
+
     const coachContextBlock = buildChatCoachContextBlock(
       coachCtx,
       coachSignals,
       checkinsSummary,
-      coachMemories
+      coachMemories,
+      stravaSummary
     );
 
     const systemPrompt = `Du bist der persönliche AI Fitness Coach. Du arbeitest mit einem klaren Entscheidungs- und Prioritätssystem.
@@ -366,6 +380,7 @@ Wenn die Nachricht emotional beginnt aber Daten enthält: Zuerst Emotion validie
 - **Gym-Ausstattung:** Wenn im Gedächtnis Ausstattung/Geräte stehen (z. B. "Hat keinen Kabelzug", "Gym hat X"): Empfehle nur Übungen, die mit dieser Ausstattung machbar sind. Erwähne keine Geräte, die der Nutzer nicht hat.
 - **Trainingsplan (Bild/PDF/Text):** Bei angehängtem oder beschriebenem Plan: Analysiere Übungen, Muskeln, Struktur (z. B. Push/Pull/Legs) und gib kurze Verbesserungsvorschläge. Wenn du gerade einen Plan verarbeitet hast: Bestätige zuerst "Ich habe deinen Plan gespeichert" und beziehe dich aktiv darauf (z. B. "Laut deinem Plan trainierst du Montag Pull …").
 - **Gedächtnis:** Alle Infos im Abschnitt "Gedächtnis" sind bereits gespeichert. Beziehe dich darauf; frage NIEMALS erneut nach Dingen, die dort stehen (z. B. nicht "Welchen Split machst du?" wenn der Split im Gedächtnis steht).
+- **Strava:** Wenn ein Abschnitt "Strava" mit Aktivitäten vorhanden ist: Nutze diese für Trainingsmuster, Belastung und Fortschritt (z. B. "Laut Strava hast du diese Woche …", "Dein Laufpensum …").
 
 ${coachContextBlock}
 
