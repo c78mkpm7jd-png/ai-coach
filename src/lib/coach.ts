@@ -423,11 +423,11 @@ export async function getCoachMemories(
   }));
 }
 
-/** Formatiert Memories für den System-Prompt. Coach soll sich aktiv darauf beziehen (z. B. "Du hast mal gesagt, …"). */
+/** Formatiert Memories für den System-Prompt. Coach soll sich aktiv darauf beziehen (z. B. "Du hast mal gesagt, …", bei Trainingsplan "Laut deinem Plan …"). */
 export function formatMemoriesForPrompt(memories: CoachMemory[]): string {
   if (memories.length === 0) return "";
   const lines = memories.map((m) => `- [${m.category || "Sonstiges"}] ${m.memory}`).join("\n");
-  return `\n## Gedächtnis (beziehe dich aktiv darauf, z. B. "Du hast mal gesagt, …")\n${lines}\n`;
+  return `\n## Gedächtnis (bereits gespeichert – beziehe dich aktiv darauf; frage nicht erneut danach. z. B. "Du hast mal gesagt, …" / "Laut deinem Plan …")\n${lines}\n`;
 }
 
 /** Erzeugt die System-Prompt-Bausteine für den Chat (Dual-Mode + Analyse). */

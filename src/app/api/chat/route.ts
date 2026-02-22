@@ -174,7 +174,7 @@ export async function POST(request: NextRequest) {
       ? (content ? `${content}\n\n` : "") + `[Angehängter Trainingsplan]\n${attachedPdfText}`
       : content;
 
-    const [profileRes, checkinsRes, messagesRes, coachMemories] = await Promise.all([
+    const [profileRes, checkinsRes, messagesRes] = await Promise.all([
       supabaseAdmin.from("profiles").select("*").eq("id", userId).single(),
       supabaseAdmin
         .from("daily_checkins")
@@ -189,12 +189,104 @@ export async function POST(request: NextRequest) {
         .select("role, content")
         .eq("user_id", userId)
         .order("created_at", { ascending: true }),
-      getCoachMemories(supabaseAdmin, userId, 20),
     ]);
 
     const profile = profileRes.data as ProfileRow | null;
     const checkins = (checkinsRes.data ?? []) as CheckinRow[];
     const existingMessages = (messagesRes.data ?? []) as { role: string; content: string }[];
+
+    const openai = new OpenAI({ apiKey: openaiKey });
+
+    // Zuerst Extraktion und Speichern, damit der Coach in derselben Antwort darauf zugreifen kann
+    // Bild: Vision-Extraktion → coach_memories mit category "trainingsplan"
+    if (attachedImage) {
+      try {
+        const visionExtract = await openai.chat.completions.create({
+          model: "gpt-4o-mini",
+          messages: [
+            {
+              role: "system",
+              content: `Du analysierst ein Bild (Trainingsplan, Screenshot, Tabelle). Extrahiere ALLE relevanten Infos für das Coach-Gedächtnis.
+Speichere als category "trainingsplan": Übungen, Struktur/Split (z. B. Push/Pull/Legs), trainierte Muskeln, Tage, Wiederholungen/Sätze – alles aus dem Plan.
+Nur wenn explizit Geräte/Ausstattung erwähnt sind: category "gym_ausstattung".
+Antworte NUR mit JSON: { "items": [ { "memory": string, "category": string } ] }. Kategorien: "trainingsplan", "gym_ausstattung". Deutsch, knapp. Maximal 20 Einträge.`,
+            },
+            {
+              role: "user",
+              content: [
+                { type: "text", text: "Extrahiere aus diesem Bild den kompletten Trainingsplan für das Gedächtnis (Übungen, Struktur, Split)." },
+                {
+                  type: "image_url",
+                  image_url: { url: `data:${attachedImage.mime};base64,${attachedImage.base64}` },
+                },
+              ],
+            },
+          ],
+          response_format: { type: "json_object" },
+          temperature: 0.2,
+        });
+        const raw = visionExtract.choices[0]?.message?.content?.trim();
+        if (raw) {
+          const parsed = JSON.parse(raw) as { items?: { memory?: string; category?: string }[] };
+          const items = Array.isArray(parsed.items) ? parsed.items : [];
+          for (const item of items) {
+            const memory = typeof item.memory === "string" ? item.memory.trim() : "";
+            const category = (typeof item.category === "string" ? item.category.trim() : null) || "trainingsplan";
+            if (memory.length > 0 && memory.length <= 500) {
+              await supabaseAdmin.from("coach_memories").insert({
+                user_id: userId,
+                memory,
+                category,
+              });
+            }
+          }
+        }
+      } catch (e) {
+        console.warn("Vision memory extraction failed:", e);
+      }
+    }
+
+    // Text/PDF: Extraktion inkl. Trainingsplan-Infos → coach_memories (sofort speichern)
+    if (contentForExtraction) {
+      try {
+        const maxItems = attachedPdfText ? 20 : 8;
+        const extractRes = await openai.chat.completions.create({
+          model: "gpt-4o-mini",
+          messages: [
+            {
+              role: "system",
+              content: `Du extrahierst aus der Nutzer-Nachricht (und ggf. angehängtem Trainingsplan) wichtige Infos für das Coach-Gedächtnis. Antworte NUR mit JSON: { "items": [ { "memory": string, "category": string } ] }.
+Kategorien: "persönlich", "gewohnheit", "vorliebe", "ziel", "gym_ausstattung", "trainingsplan" (alles was der Nutzer über seinen Plan sagt: Übungen, Split, Tage, Struktur – sofort speichern, nicht nachfragen).
+Jede Erwähnung von Plan/Übungen/Split als "trainingsplan" speichern. Maximal ${maxItems} Items. Deutsch, knapp.`,
+            },
+            { role: "user", content: contentForExtraction },
+          ],
+          response_format: { type: "json_object" },
+          temperature: 0.2,
+        });
+        const rawExtract = extractRes.choices[0]?.message?.content?.trim();
+        if (rawExtract) {
+          const parsed = JSON.parse(rawExtract) as { items?: { memory?: string; category?: string }[] };
+          const items = Array.isArray(parsed.items) ? parsed.items : [];
+          for (const item of items) {
+            const memory = typeof item.memory === "string" ? item.memory.trim() : "";
+            const category = typeof item.category === "string" ? item.category.trim() || null : null;
+            if (memory.length > 0 && memory.length <= 500) {
+              await supabaseAdmin.from("coach_memories").insert({
+                user_id: userId,
+                memory,
+                category: category || null,
+              });
+            }
+          }
+        }
+      } catch (e) {
+        console.warn("Coach memory extraction failed:", e);
+      }
+    }
+
+    // Memories neu laden (inkl. gerade gespeicherte), damit Coach in derselben Antwort darauf eingehen kann
+    const coachMemories = await getCoachMemories(supabaseAdmin, userId, 20);
 
     const weight = Number(profile?.weight) ?? 70;
     const height = Number(profile?.height) ?? 175;
@@ -243,96 +335,6 @@ export async function POST(request: NextRequest) {
       coachMemories
     );
 
-    const openai = new OpenAI({ apiKey: openaiKey });
-
-    // Bild: Vision-Extraktion (Übungen, Geräte, Struktur) → coach_memories
-    if (attachedImage && contentForCompletionText) {
-      try {
-        const visionExtract = await openai.chat.completions.create({
-          model: "gpt-4o-mini",
-          messages: [
-            {
-              role: "system",
-              content: `Du analysierst ein Bild (Trainingsplan, Screenshot, Tabelle). Extrahiere für das Coach-Gedächtnis:
-- Gym-Ausstattung / Geräte (falls erkennbar): "Gym hat X", "Nutzer trainiert mit Y"
-- Übungen und Maschinen: jede erkennbare Übung als memory, Kategorie "übung" oder "gym_ausstattung"
-Antworte NUR mit JSON: { "items": [ { "memory": string, "category": string } ] }. Kategorien: "gym_ausstattung", "übung". Deutsch, knapp. Maximal 15 Einträge.`,
-            },
-            {
-              role: "user",
-              content: [
-                { type: "text", text: "Extrahiere aus diesem Bild alle Übungen und Geräte für das Gedächtnis." },
-                {
-                  type: "image_url",
-                  image_url: { url: `data:${attachedImage.mime};base64,${attachedImage.base64}` },
-                },
-              ],
-            },
-          ],
-          response_format: { type: "json_object" },
-          temperature: 0.2,
-        });
-        const raw = visionExtract.choices[0]?.message?.content?.trim();
-        if (raw) {
-          const parsed = JSON.parse(raw) as { items?: { memory?: string; category?: string }[] };
-          const items = Array.isArray(parsed.items) ? parsed.items : [];
-          for (const item of items) {
-            const memory = typeof item.memory === "string" ? item.memory.trim() : "";
-            const category = typeof item.category === "string" ? item.category.trim() || null : null;
-            if (memory.length > 0 && memory.length <= 500) {
-              await supabaseAdmin.from("coach_memories").insert({
-                user_id: userId,
-                memory,
-                category: category || null,
-              });
-            }
-          }
-        }
-      } catch (e) {
-        console.warn("Vision memory extraction failed:", e);
-      }
-    }
-
-    // Text/PDF: OpenAI extrahiert wichtige Infos (inkl. Gym-Ausstattung) → coach_memories
-    if (contentForExtraction) {
-      try {
-        const maxItems = attachedPdfText ? 15 : 5;
-        const extractRes = await openai.chat.completions.create({
-          model: "gpt-4o-mini",
-          messages: [
-            {
-              role: "system",
-              content: `Du extrahierst aus der Nutzer-Nachricht (und ggf. angehängtem Trainingsplan) wichtige Informationen für ein Coach-Gedächtnis. Antworte NUR mit einem JSON-Objekt mit einem Feld "items" (Array). Jedes Element: { "memory": string, "category": string }.
-Kategorien: "persönlich", "gewohnheit", "vorliebe", "ziel", "gym_ausstattung" (Geräte/Ausstattung: "Hat keinen Kabelzug", "Gym hat Langhantel und Kurzhanteln", "Zu Hause nur Widerstandsband" – was Nutzer hat oder nicht hat).
-Nur echte Aussagen extrahieren. Bei Gym-Ausstattung: jede Erwähnung als eigene memory. Maximal ${maxItems} Items. Wenn nichts Relevantes: "items": [].
-Sprache der memory: Deutsch, knapp (z. B. "Schläft oft schlecht", "Trainiert morgens", "Gym hat Kabelzug und Beinpresse").`,
-            },
-            { role: "user", content: contentForExtraction },
-          ],
-          response_format: { type: "json_object" },
-          temperature: 0.2,
-        });
-        const rawExtract = extractRes.choices[0]?.message?.content?.trim();
-        if (rawExtract) {
-          const parsed = JSON.parse(rawExtract) as { items?: { memory?: string; category?: string }[] };
-          const items = Array.isArray(parsed.items) ? parsed.items : [];
-          for (const item of items) {
-            const memory = typeof item.memory === "string" ? item.memory.trim() : "";
-            const category = typeof item.category === "string" ? item.category.trim() || null : null;
-            if (memory.length > 0 && memory.length <= 500) {
-              await supabaseAdmin.from("coach_memories").insert({
-                user_id: userId,
-                memory,
-                category: category || null,
-              });
-            }
-          }
-        }
-      } catch (e) {
-        console.warn("Coach memory extraction failed:", e);
-      }
-    }
-
     const systemPrompt = `Du bist der persönliche AI Fitness Coach. Du arbeitest mit einem klaren Entscheidungs- und Prioritätssystem.
 
 ## DUAL-MODE – Intent erkennen
@@ -358,7 +360,8 @@ Wenn die Nachricht emotional beginnt aber Daten enthält: Zuerst Emotion validie
 - Beziehe dich auf konkrete Daten: "Letzte Woche hattest du …", "Im Vergleich zu Montag …"
 - Ernährung: messbar ("+30g Protein"), konkret ("2 Eier + 250g Skyr"), umsetzbar heute. Keine Floskeln wie "achte auf Ernährung".
 - **Gym-Ausstattung:** Wenn im Gedächtnis Ausstattung/Geräte stehen (z. B. "Hat keinen Kabelzug", "Gym hat X"): Empfehle nur Übungen, die mit dieser Ausstattung machbar sind. Erwähne keine Geräte, die der Nutzer nicht hat.
-- **Trainingsplan (Bild/PDF):** Bei angehängtem Plan: Analysiere Übungen, trainierte Muskeln, Struktur (z. B. Push/Pull/Legs) und gib kurze, konkrete Verbesserungsvorschläge.
+- **Trainingsplan (Bild/PDF/Text):** Bei angehängtem oder beschriebenem Plan: Analysiere Übungen, Muskeln, Struktur (z. B. Push/Pull/Legs) und gib kurze Verbesserungsvorschläge. Wenn du gerade einen Plan verarbeitet hast: Bestätige zuerst "Ich habe deinen Plan gespeichert" und beziehe dich aktiv darauf (z. B. "Laut deinem Plan trainierst du Montag Pull …").
+- **Gedächtnis:** Alle Infos im Abschnitt "Gedächtnis" sind bereits gespeichert. Beziehe dich darauf; frage NIEMALS erneut nach Dingen, die dort stehen (z. B. nicht "Welchen Split machst du?" wenn der Split im Gedächtnis steht).
 
 ${coachContextBlock}
 
