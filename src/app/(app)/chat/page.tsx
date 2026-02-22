@@ -1,8 +1,13 @@
 "use client";
 
-import { useState, useEffect, useRef, FormEvent } from "react";
+import { useState, useEffect, useRef, FormEvent, useCallback } from "react";
 import MessageChart, { type ChartPayload } from "@/components/chat/MessageChart";
 import { useSidebar } from "@/components/layout/SidebarContext";
+
+const IMAGE_TYPES = ["image/jpeg", "image/jpg", "image/png"];
+function isImage(file: File) {
+  return IMAGE_TYPES.includes(file.type.toLowerCase());
+}
 
 type ChatMessage = {
   id: string;
@@ -10,7 +15,11 @@ type ChatMessage = {
   content: string;
   created_at: string;
   chart?: ChartPayload;
+  /** Blob-URLs für gesendete Bilder (nur aktuelle Session) */
+  attachedImageUrls?: string[];
 };
+
+type AttachedItem = { file: File; previewUrl: string | null };
 
 export default function ChatPage() {
   const { setMobileOpen } = useSidebar();
@@ -18,7 +27,8 @@ export default function ChatPage() {
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [loadingHistory, setLoadingHistory] = useState(true);
-  const [attachedFile, setAttachedFile] = useState<File | null>(null);
+  const [attachedList, setAttachedList] = useState<AttachedItem[]>([]);
+  const [lightboxImage, setLightboxImage] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -40,25 +50,45 @@ export default function ChatPage() {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
   }, [messages]);
 
+  const removeAttached = useCallback((index: number) => {
+    setAttachedList((prev) => {
+      const next = [...prev];
+      const item = next.splice(index, 1)[0];
+      if (item?.previewUrl) URL.revokeObjectURL(item.previewUrl);
+      return next;
+    });
+  }, []);
+
   function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    if (file.size > maxFileSize) {
-      alert(`Datei maximal ${maxFileSizeMb} MB`);
-      e.target.value = "";
-      return;
-    }
-    setAttachedFile(file);
+    const files = Array.from(e.target.files ?? []);
+    e.target.value = "";
+    if (!files.length) return;
+    const newItems: AttachedItem[] = files
+      .filter((file) => {
+        if (file.size > maxFileSize) {
+          alert(`"${file.name}" ist zu groß. Max. ${maxFileSizeMb} MB.`);
+          return false;
+        }
+        return true;
+      })
+      .map((file) => ({
+        file,
+        previewUrl: isImage(file) ? URL.createObjectURL(file) : null,
+      }));
+    setAttachedList((prev) => [...prev, ...newItems]);
   }
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     const text = input.trim();
-    if ((!text && !attachedFile) || loading) return;
+    const hasFiles = attachedList.length > 0;
+    if ((!text && !hasFiles) || loading) return;
 
-    const displayContent = text || (attachedFile ? `[Datei: ${attachedFile.name}]` : "");
+    const filesToSend = [...attachedList];
+    const imageUrls = filesToSend.filter((i) => i.previewUrl).map((i) => i.previewUrl!);
+    const displayContent = text || (hasFiles ? `[${filesToSend.length} Datei${filesToSend.length > 1 ? "en" : ""}]` : "");
     setInput("");
-    setAttachedFile(null);
+    setAttachedList([]);
     if (fileInputRef.current) fileInputRef.current.value = "";
 
     const userMessage: ChatMessage = {
@@ -66,16 +96,17 @@ export default function ChatPage() {
       role: "user",
       content: displayContent,
       created_at: new Date().toISOString(),
+      attachedImageUrls: imageUrls.length > 0 ? imageUrls : undefined,
     };
     setMessages((prev) => [...prev, userMessage]);
     setLoading(true);
 
     try {
       let res: Response;
-      if (attachedFile) {
+      if (hasFiles) {
         const formData = new FormData();
         formData.set("content", text);
-        formData.set("file", attachedFile);
+        filesToSend.forEach(({ file }) => formData.append("file", file));
         res = await fetch("/api/chat", {
           method: "POST",
           body: formData,
@@ -184,7 +215,21 @@ export default function ChatPage() {
                         : "bg-white/10 text-white border border-white/10 rounded-bl-md"
                     }`}
                   >
-                    <p className="whitespace-pre-wrap break-words">{m.content}</p>
+                    {isUser && m.attachedImageUrls && m.attachedImageUrls.length > 0 && (
+                      <div className="mb-2 flex flex-wrap gap-1.5">
+                        {m.attachedImageUrls.map((url, i) => (
+                          <button
+                            key={i}
+                            type="button"
+                            onClick={() => setLightboxImage(url)}
+                            className="h-14 w-14 shrink-0 overflow-hidden rounded-lg border border-zinc-300 object-cover focus:outline-none focus:ring-2 focus:ring-zinc-400"
+                          >
+                            <img src={url} alt="" className="h-full w-full object-cover" />
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                    {m.content ? <p className="whitespace-pre-wrap break-words">{m.content}</p> : null}
                     {!isUser && m.chart && <MessageChart chart={m.chart} />}
                   </div>
                 </div>
@@ -207,17 +252,32 @@ export default function ChatPage() {
         className="fixed inset-x-0 bottom-0 z-10 border-t border-white/10 bg-zinc-950 p-3 md:static md:z-auto md:shrink-0"
         style={{ paddingBottom: "calc(0.75rem + env(safe-area-inset-bottom))" }}
       >
-        {attachedFile && (
-          <div className="mb-2 flex items-center gap-2 rounded-lg border border-white/15 bg-zinc-900 px-3 py-2 text-sm text-white/80">
-            <span className="truncate flex-1">{attachedFile.name}</span>
-            <button
-              type="button"
-              onClick={() => { setAttachedFile(null); if (fileInputRef.current) fileInputRef.current.value = ""; }}
-              className="shrink-0 rounded px-2 py-0.5 text-white/60 hover:bg-white/10 hover:text-white"
-              aria-label="Datei entfernen"
-            >
-              Entfernen
-            </button>
+        {attachedList.length > 0 && (
+          <div className="mb-2 flex flex-wrap gap-2">
+            {attachedList.map((item, index) => (
+              <div key={index} className="relative">
+                {item.previewUrl ? (
+                  <div className="h-16 w-16 overflow-hidden rounded-lg border border-white/20 bg-zinc-900">
+                    <img src={item.previewUrl} alt="" className="h-full w-full object-cover" />
+                  </div>
+                ) : (
+                  <div className="flex h-16 w-16 items-center justify-center rounded-lg border border-white/20 bg-zinc-900 px-1.5 text-center text-[10px] text-white/70">
+                    PDF
+                  </div>
+                )}
+                <button
+                  type="button"
+                  onClick={() => removeAttached(index)}
+                  className="absolute -right-1.5 -top-1.5 flex h-6 w-6 items-center justify-center rounded-full bg-zinc-700 text-white shadow hover:bg-red-500"
+                  aria-label="Entfernen"
+                >
+                  <span className="sr-only">Entfernen</span>
+                  <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+            ))}
           </div>
         )}
         <div className="flex gap-2">
@@ -225,6 +285,7 @@ export default function ChatPage() {
             ref={fileInputRef}
             type="file"
             accept={allowedTypes}
+            multiple
             onChange={handleFileChange}
             className="hidden"
             aria-hidden
@@ -234,8 +295,8 @@ export default function ChatPage() {
             onClick={() => fileInputRef.current?.click()}
             disabled={loading}
             className="shrink-0 rounded-xl border border-white/15 bg-zinc-900 p-2.5 text-white/70 hover:bg-white/10 hover:text-white disabled:opacity-50"
-            aria-label="Bild oder PDF anhängen (JPG, PNG, PDF)"
-            title="Bild oder PDF anhängen"
+            aria-label="Bilder oder PDF anhängen (JPG, PNG, PDF)"
+            title="Bilder oder PDF anhängen"
           >
             <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
@@ -252,14 +313,42 @@ export default function ChatPage() {
           />
           <button
             type="submit"
-            disabled={(!input.trim() && !attachedFile) || loading}
+            disabled={(!input.trim() && attachedList.length === 0) || loading}
             className="shrink-0 rounded-xl bg-white px-4 py-2.5 text-sm font-medium text-zinc-950 transition hover:bg-white/90 disabled:cursor-not-allowed disabled:opacity-50"
           >
             Senden
           </button>
         </div>
-        <p className="mt-1.5 text-xs text-white/40">JPG, PNG oder PDF (max. {maxFileSizeMb} MB) für Trainingsplan-Analyse</p>
+        <p className="mt-1.5 text-xs text-white/40">Mehrere JPG/PNG oder PDF (max. {maxFileSizeMb} MB)</p>
       </form>
+
+      {/* Lightbox: große Bildansicht mit X */}
+      {lightboxImage && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 p-4"
+          onClick={() => setLightboxImage(null)}
+          role="dialog"
+          aria-modal="true"
+          aria-label="Bild vergrößert"
+        >
+          <button
+            type="button"
+            onClick={() => setLightboxImage(null)}
+            className="absolute right-4 top-4 flex h-10 w-10 items-center justify-center rounded-full bg-white/20 text-white hover:bg-white/30"
+            aria-label="Schließen"
+          >
+            <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+          <img
+            src={lightboxImage}
+            alt="Vergrößert"
+            className="max-h-[90vh] max-w-full object-contain"
+            onClick={(e) => e.stopPropagation()}
+          />
+        </div>
+      )}
     </div>
   );
 }

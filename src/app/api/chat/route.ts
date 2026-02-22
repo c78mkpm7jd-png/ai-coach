@@ -122,39 +122,46 @@ export async function POST(request: NextRequest) {
     const contentType = request.headers.get("content-type") ?? "";
     let content = "";
     let attachedPdfText: string | null = null;
-    let attachedImage: { base64: string; mime: string } | null = null;
+    const attachedImages: { base64: string; mime: string }[] = [];
     let contentForDb = "";
 
     if (contentType.includes("multipart/form-data")) {
       const formData = await request.formData();
       const textPart = formData.get("content");
       content = typeof textPart === "string" ? textPart.trim() : "";
-      const file = formData.get("file");
-      if (file instanceof File && file.size > 0) {
+      const files = formData.getAll("file").filter((f): f is File => f instanceof File && f.size > 0);
+      const allowedImages = ["image/jpeg", "image/jpg", "image/png"];
+      const imageNames: string[] = [];
+      const pdfNames: string[] = [];
+      for (const file of files) {
         const type = file.type.toLowerCase();
-        const allowedImages = ["image/jpeg", "image/jpg", "image/png"];
         if (type === "application/pdf") {
-          const buffer = Buffer.from(await file.arrayBuffer());
-          try {
-            const pdf = await pdfParse(buffer);
-            attachedPdfText = typeof pdf.text === "string" ? pdf.text.trim() : "";
-          } catch (e) {
-            console.warn("PDF parse failed:", e);
+          if (!attachedPdfText) {
+            const buffer = Buffer.from(await file.arrayBuffer());
+            try {
+              const pdf = await pdfParse(buffer);
+              attachedPdfText = typeof pdf.text === "string" ? pdf.text.trim() : "";
+            } catch (e) {
+              console.warn("PDF parse failed:", e);
+            }
           }
-          contentForDb = content ? `${content} [PDF: ${file.name}]` : `[PDF angehängt: ${file.name}]`;
+          pdfNames.push(file.name);
         } else if (allowedImages.includes(type)) {
           const base64 = Buffer.from(await file.arrayBuffer()).toString("base64");
-          attachedImage = { base64, mime: type };
-          contentForDb = content ? `${content} [Bild: ${file.name}]` : `[Bild angehängt: ${file.name}]`;
+          attachedImages.push({ base64, mime: type });
+          imageNames.push(file.name);
         }
       }
-      if (!content && !attachedPdfText && !attachedImage) {
+      if (content) contentForDb = content;
+      if (imageNames.length > 0) contentForDb += (contentForDb ? " " : "") + `[${imageNames.length} Bild${imageNames.length > 1 ? "er" : ""}]`;
+      if (pdfNames.length > 0) contentForDb += (contentForDb ? " " : "") + `[PDF: ${pdfNames.join(", ")}]`;
+      if (!content && !attachedPdfText && attachedImages.length === 0) {
         return NextResponse.json(
           { error: "Nachricht oder Datei (JPG/PNG/PDF) erforderlich" },
           { status: 400 }
         );
       }
-      if (!contentForDb) contentForDb = content || " [Datei angehängt]";
+      if (!contentForDb) contentForDb = " [Datei angehängt]";
     } else {
       const body = await request.json();
       content = typeof body.content === "string" ? body.content.trim() : "";
@@ -198,29 +205,27 @@ export async function POST(request: NextRequest) {
     const openai = new OpenAI({ apiKey: openaiKey });
 
     // Zuerst Extraktion und Speichern, damit der Coach in derselben Antwort darauf zugreifen kann
-    // Bild: Vision-Extraktion → coach_memories mit category "trainingsplan"
-    if (attachedImage) {
+    // Bilder: Vision-Extraktion (alle Bilder in einem Aufruf) → coach_memories mit category "trainingsplan"
+    if (attachedImages.length > 0) {
       try {
+        const visionContent: OpenAI.Chat.ChatCompletionContentPart[] = [
+          { type: "text", text: "Extrahiere aus allen Bildern den kompletten Trainingsplan für das Gedächtnis (Übungen, Struktur, Split)." },
+          ...attachedImages.map((img) => ({
+            type: "image_url" as const,
+            image_url: { url: `data:${img.mime};base64,${img.base64}` },
+          })),
+        ];
         const visionExtract = await openai.chat.completions.create({
           model: "gpt-4o-mini",
           messages: [
             {
               role: "system",
-              content: `Du analysierst ein Bild (Trainingsplan, Screenshot, Tabelle). Extrahiere ALLE relevanten Infos für das Coach-Gedächtnis.
-Speichere als category "trainingsplan": Übungen, Struktur/Split (z. B. Push/Pull/Legs), trainierte Muskeln, Tage, Wiederholungen/Sätze – alles aus dem Plan.
+              content: `Du analysierst Bilder (Trainingspläne, Screenshots, Tabellen). Extrahiere ALLE relevanten Infos für das Coach-Gedächtnis.
+Speichere als category "trainingsplan": Übungen, Struktur/Split (z. B. Push/Pull/Legs), trainierte Muskeln, Tage, Wiederholungen/Sätze – alles aus den Plänen.
 Nur wenn explizit Geräte/Ausstattung erwähnt sind: category "gym_ausstattung".
-Antworte NUR mit JSON: { "items": [ { "memory": string, "category": string } ] }. Kategorien: "trainingsplan", "gym_ausstattung". Deutsch, knapp. Maximal 20 Einträge.`,
+Antworte NUR mit JSON: { "items": [ { "memory": string, "category": string } ] }. Kategorien: "trainingsplan", "gym_ausstattung". Deutsch, knapp. Maximal 25 Einträge.`,
             },
-            {
-              role: "user",
-              content: [
-                { type: "text", text: "Extrahiere aus diesem Bild den kompletten Trainingsplan für das Gedächtnis (Übungen, Struktur, Split)." },
-                {
-                  type: "image_url",
-                  image_url: { url: `data:${attachedImage.mime};base64,${attachedImage.base64}` },
-                },
-              ],
-            },
+            { role: "user", content: visionContent },
           ],
           response_format: { type: "json_object" },
           temperature: 0.2,
@@ -371,15 +376,16 @@ Antworte ausschließlich mit einem JSON-Objekt (kein anderer Text):
 - "chartType": string | null – Grafik nur wenn sinnvoll oder explizit gewünscht: "weight" | "calories" | "activity" | "energy_hunger" | "pie" | null
 - "chartTitle": string | null – optionaler Grafik-Titel`;
 
-    const userMessageContent: OpenAI.Chat.ChatCompletionMessageParam["content"] = attachedImage
-      ? [
-          { type: "text", text: contentForCompletionText || "Analysiere bitte den angehängten Trainingsplan: Welche Übungen, welche Muskeln, Struktur (z. B. Push/Pull/Legs), Verbesserungsvorschläge." },
-          {
-            type: "image_url",
-            image_url: { url: `data:${attachedImage.mime};base64,${attachedImage.base64}` },
-          },
-        ]
-      : contentForCompletionText;
+    const userMessageContent: OpenAI.Chat.ChatCompletionMessageParam["content"] =
+      attachedImages.length > 0
+        ? [
+            { type: "text", text: contentForCompletionText || "Analysiere bitte den angehängten Trainingsplan: Welche Übungen, welche Muskeln, Struktur (z. B. Push/Pull/Legs), Verbesserungsvorschläge." },
+            ...attachedImages.map((img) => ({
+              type: "image_url" as const,
+              image_url: { url: `data:${img.mime};base64,${img.base64}` },
+            })),
+          ]
+        : contentForCompletionText;
 
     const messagesForApi: OpenAI.Chat.ChatCompletionMessageParam[] = [
       { role: "system", content: systemPrompt },
