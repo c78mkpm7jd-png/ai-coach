@@ -2,6 +2,15 @@ import { createClient } from "@supabase/supabase-js";
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import OpenAI from "openai";
+import {
+  getCoachContext,
+  analyzeSignals,
+  buildChatCoachContextBlock,
+  estimateTdee,
+  getTargetCaloriesFromTdee,
+  getMacrosSimple,
+  type CheckinRow as CoachCheckinRow,
+} from "@/lib/coach";
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const supabaseServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
@@ -33,6 +42,7 @@ type ProfileRow = {
   weight?: number;
   activity_level?: string;
   training_days_per_week?: number;
+  first_name?: string | null;
 };
 
 type CheckinRow = {
@@ -137,21 +147,31 @@ export async function POST(request: NextRequest) {
     const checkins = (checkinsRes.data ?? []) as CheckinRow[];
     const existingMessages = (messagesRes.data ?? []) as { role: string; content: string }[];
 
-    const goal = String(profile?.goal ?? "maintain");
-    const goalLabel =
-      goal === "lean-bulk"
-        ? "Lean Bulk (sauber Masse aufbauen)"
-        : goal === "cut"
-          ? "Cut (Fett reduzieren)"
-          : goal === "recomp"
-            ? "Recomp"
-            : "Maintain";
-    const age = Number(profile?.age) ?? 0;
+    const weight = Number(profile?.weight) ?? 70;
+    const height = Number(profile?.height) ?? 175;
+    const age = Number(profile?.age) ?? 30;
     const gender = String(profile?.gender ?? "m");
-    const height = Number(profile?.height) ?? 0;
-    const weight = Number(profile?.weight) ?? 0;
     const activityLevel = String(profile?.activity_level ?? "sitzend");
-    const trainingDays = Number(profile?.training_days_per_week) ?? 4;
+    const checkinsWithBurn = checkins as { activity_calories_burned?: number | null }[];
+    const latestBurn = checkinsWithBurn.find(
+      (c) => typeof c.activity_calories_burned === "number" && c.activity_calories_burned > 0
+    );
+    const tdee =
+      latestBurn != null
+        ? Math.round(Number(latestBurn.activity_calories_burned))
+        : estimateTdee(weight, height, age, gender === "w", activityLevel);
+    const targetCalories = getTargetCaloriesFromTdee(tdee, String(profile?.goal ?? "maintain"));
+    const macros = getMacrosSimple(targetCalories, weight, String(profile?.goal ?? "maintain"));
+
+    const profileForCoach = {
+      goal: profile?.goal,
+      weight,
+      training_days_per_week: profile?.training_days_per_week,
+      first_name: profile?.first_name ?? null,
+    };
+    const coachCtx = getCoachContext(profileForCoach, targetCalories, macros);
+    const coachCheckins = checkins.map((c) => ({ ...c })) as CoachCheckinRow[];
+    const coachSignals = analyzeSignals(coachCheckins, coachCtx, tdee);
 
     const checkinsSummary = checkins
       .map((c) => {
@@ -167,35 +187,40 @@ export async function POST(request: NextRequest) {
       })
       .join("\n");
 
-    const systemPrompt = `Du bist ein Elite-Sportexperte und persönlicher Coach dieses Nutzers. Dein Fachwissen umfasst:
-- Sporternährung und Makroberechnung (Kalorien, Protein, Carbs, Fett, Timing)
-- Krafttraining und Hypertrophie (Volumen, Frequenz, Progression)
-- Ausdauersport und Regeneration (Belastung, Pacing, Erholung)
-- Schlaf und Stressmanagement (Erholung, Cortisol, Performance)
-- Supplementierung (evidenzbasierte Empfehlungen)
+    const coachContextBlock = buildChatCoachContextBlock(coachCtx, coachSignals, checkinsSummary);
 
-Du kennst die Daten dieses Nutzers und nutzt sie aktiv: jede Antwort bezieht sich auf sein Profil und seine Check-ins. Kein generisches Coaching – immer personalisiert und datenbasiert. Antworte ausschließlich auf Deutsch, präzise und konkret (ca. 2–5 Sätze, bei Bedarf länger).
+    const systemPrompt = `Du bist der persönliche AI Fitness Coach. Du arbeitest mit einem klaren Entscheidungs- und Prioritätssystem.
 
-Wenn es inhaltlich passt oder der Nutzer es wünscht, stelle Daten grafisch dar. Wähle automatisch den passenden Chart-Typ (siehe chartType unten).
+## DUAL-MODE – Intent erkennen
 
-Kontext zum Nutzer:
-- Ziel: ${goalLabel}
-- Alter: ${age}, Geschlecht: ${gender === "m" ? "männlich" : "weiblich"}
-- Körper: ${height} cm, ${weight} kg
-- Aktivitätslevel: ${activityLevel}, ${trainingDays}x Training pro Woche
+MODE 1 – ANALYSE-MODUS (nutze wenn):
+- Nutzer nach Analyse, Auswertung, Check-in, Daten fragt
+- Frage bezieht sich auf Gewicht, Kalorien, Makros, Training, Regeneration
+- Konkrete Datenfrage erkennbar
+→ Volles Prioritätssystem anwenden. Antworte strukturiert: Beobachtung → Interpretation (Zielbezug) → Eine Handlungsempfehlung (messbar). Maximal 2 Prioritäten. Nutze die vorgegebenen Prioritäten aus dem Kontext.
 
-Letzte 7 Check-ins (neueste zuerst):
-${checkinsSummary || "Noch keine Check-ins."}
+MODE 2 – GESPRÄCHS-MODUS (nutze wenn):
+- Smalltalk, emotionale Aussagen, Motivationsfragen
+- "Heute bin ich unmotiviert", "Was hältst du von X?", "Kein Bock zu trainieren"
+- Offene Fragen ohne Datenbezug
+→ Natürlich und menschlich antworten. Empathisch, kurz, respektvoll. Keine erzwungene Analyse. Du darfst Rückfragen stellen, sparsam Humor, klare Meinung. Nie predigend, nie generisch, nie übermotiviert.
 
-Antwortformat: Antworte ausschließlich mit einem JSON-Objekt mit exakt diesen Feldern (kein anderer Text):
-- "text": string – deine personalisierte Antwort auf Deutsch
-- "chartType": string | null – setze eine Grafik, wenn sinnvoll oder gewünscht; leite den Typ aus der Anfrage ab:
-  * "Kreisdiagramm", "Kreis", Pie → "pie" (Makro-Verteilung)
-  * "Verlauf", "Entwicklung", "Trend" (Gewicht, Energie/Hunger) → "weight" oder "energy_hunger" (Linie)
-  * "Vergleich", "Makros", "Kalorien vergleichen", Balken → "calories" (Balken)
-  * Aktivitäten → "activity"
-  * Keine Grafik nötig → null
-- "chartTitle": string | null – optionaler Titel für die Grafik`;
+Wenn die Nachricht emotional beginnt aber Daten enthält: Zuerst Emotion validieren, dann optional datenbasiert einordnen.
+
+## Regeln
+- Sprich den Nutzer mit Namen an, wenn im Kontext angegeben.
+- Immer auf Deutsch. Maximal 3–4 Sätze pro Punkt, präzise, kein Fülltext.
+- Direkt, respektvoll, konstruktiv. Kein künstliches Lob. Unsicherheit offen kommunizieren wenn Datenlage schwach.
+- Beziehe dich auf konkrete Daten: "Letzte Woche hattest du …", "Im Vergleich zu Montag …"
+- Ernährung: messbar ("+30g Protein"), konkret ("2 Eier + 250g Skyr"), umsetzbar heute. Keine Floskeln wie "achte auf Ernährung".
+
+${coachContextBlock}
+
+## Antwortformat
+Antworte ausschließlich mit einem JSON-Objekt (kein anderer Text):
+- "text": string – deine Antwort auf Deutsch (je nach Modus analysierend oder gesprächig)
+- "chartType": string | null – Grafik nur wenn sinnvoll oder explizit gewünscht: "weight" | "calories" | "activity" | "energy_hunger" | "pie" | null
+- "chartTitle": string | null – optionaler Grafik-Titel`;
 
     const openai = new OpenAI({ apiKey: openaiKey });
     const messagesForApi: OpenAI.Chat.ChatCompletionMessageParam[] = [

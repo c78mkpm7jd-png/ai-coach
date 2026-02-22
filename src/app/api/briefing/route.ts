@@ -2,6 +2,12 @@ import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
 import { auth } from '@clerk/nextjs/server'
 import OpenAI from 'openai'
+import {
+  getCoachContext,
+  analyzeSignals,
+  buildAnalysisInstructions,
+  type CheckinRow as CoachCheckinRow,
+} from '@/lib/coach'
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
 const supabaseServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY!
@@ -266,22 +272,53 @@ Deine Antwort muss valides JSON sein mit exakt diesen Feldern (kein anderer Text
       }
     }
 
-    // 2. Check-In Analyse (nur Nutzerdaten) – nur wenn mind. 1 Check-in und nicht only=tip
+    // 2. Check-In Analyse: Coach-Entscheidungsmodell (Kontext, Signale, Prioritäten)
     if (only !== 'tip' && hasCheckins) {
-      const calorieTarget = targetCalories
-      const proteinTarget = Math.round(weight * 2)
-      const analysisSystemPrompt = `Du bist ein datenorientierter Fitness- und Ernährungscoach. Antworte ausschließlich auf Deutsch.
+      const profileForCoach = {
+        goal,
+        weight,
+        training_days_per_week: profile.training_days_per_week,
+        first_name: profile.first_name ?? null,
+      }
+      const coachCtx = getCoachContext(profileForCoach, targetCalories, {
+        ...macros,
+        calories: macros.calories,
+      })
+      const coachCheckins = (checkins as CheckinRow[]).map((c) => ({
+        created_at: c.created_at,
+        weight_kg: c.weight_kg,
+        hunger_level: c.hunger_level,
+        energy_level: c.energy_level,
+        trained: c.trained,
+        activity_type: c.activity_type,
+        activity_duration_min: c.activity_duration_min,
+        activity_calories_burned: c.activity_calories_burned,
+        calories_intake: c.calories_intake,
+        protein_intake: c.protein_intake,
+        carbs_intake: c.carbs_intake,
+        fat_intake: c.fat_intake,
+      })) as CoachCheckinRow[]
+      const coachSignals = analyzeSignals(coachCheckins, coachCtx, tdee)
+      const analysisInstructions = buildAnalysisInstructions(
+        coachCtx,
+        coachSignals,
+        checkinsSummary
+      )
+
+      const analysisSystemPrompt = `Du bist ein datenorientierter Fitness- und Ernährungscoach mit klarem Prioritätssystem. Antworte ausschließlich auf Deutsch.
+
 Deine Antwort muss valides JSON sein mit exakt diesen Feldern (kein anderer Text):
 - "analysisTitle": eine kurze, prägnante Überschrift der Analyse (mit Anführungszeichen)
-- "analysisPreview": Genau EIN spannender Satz basierend auf den Daten, der neugierig macht (max. 15 Wörter). Wird nur auf der Dashboard-Card angezeigt. Kein Spoiler der vollen Analyse.
-- "analysisBody": Die vollständige datenbasierte Analyse: NUR basierend auf den Check-in-Daten. Kalorien, Makros, Verbrauch, Aktivität. Konkrete, umsetzbare Empfehlungen. Exakt 3–4 Sätze. Wird nur auf der Detailseite angezeigt.`
+- "analysisPreview": Genau EIN Satz basierend auf den Daten (max. 15 Wörter). Dashboard-Card. Kein Spoiler.
+- "analysisBody": Die Analyse folgt der vorgegebenen Prioritätenlogik: Beobachtung → Interpretation (Zielbezug) → Eine Handlungsempfehlung (messbar). Maximal 3–4 Sätze pro Punkt. Kein generischer Text.`
 
-      const analysisUserPrompt = `Profil-Ziel: ${goal}. Tagesziel: ca. ${calorieTarget} kcal, mind. ${proteinTarget} g Protein. Makros-Ziel: ${macros.protein} g Protein, ${macros.carbs} g Carbs, ${macros.fat} g Fett.
+      const analysisUserPrompt = `Anweisungen (strikt befolgen):
+${analysisInstructions}
 
-Letzte Check-ins (alle eingetragenen Daten):
+Rohdaten Check-ins:
 ${checkinsSummary}
 
-Analysiere ausschließlich diese Daten und gib konkrete Handlungsempfehlungen.`
+Antworte NUR mit dem JSON-Objekt (analysisTitle, analysisPreview, analysisBody).`
 
       const analysisCompletion = await openai.chat.completions.create({
         model: 'gpt-4o',
@@ -290,7 +327,7 @@ Analysiere ausschließlich diese Daten und gib konkrete Handlungsempfehlungen.`
           { role: 'user', content: analysisUserPrompt },
         ],
         response_format: { type: 'json_object' },
-        temperature: 0.5,
+        temperature: 0.4,
       })
 
       const analysisContent = analysisCompletion.choices[0]?.message?.content
