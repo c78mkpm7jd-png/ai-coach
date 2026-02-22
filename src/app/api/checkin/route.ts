@@ -13,19 +13,22 @@ const supabaseAdmin = createClient(supabaseUrl, supabaseServiceRoleKey, {
   auth: { autoRefreshToken: false, persistSession: false },
 })
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
     const { userId } = await auth()
     if (!userId) {
       return NextResponse.json({ error: 'Nicht autorisiert' }, { status: 401 })
     }
 
+    const { searchParams } = new URL(request.url)
+    const limit = Math.min(60, Math.max(1, parseInt(searchParams.get('limit') ?? '7', 10) || 7))
+
     const { data, error } = await supabaseAdmin
       .from('daily_checkins')
       .select('id, created_at, weight_kg, hunger_level, energy_level, trained, activity_type, activity_duration_min, activity_calories_burned, calories_intake, protein_intake, carbs_intake, fat_intake')
       .eq('user_id', userId)
       .order('created_at', { ascending: false })
-      .limit(7)
+      .limit(limit)
 
     if (error) {
       console.error('❌ API checkin GET:', error)
