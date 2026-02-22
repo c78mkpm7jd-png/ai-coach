@@ -4,7 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { UserButton } from "@clerk/nextjs";
-import { useSidebar } from "./SidebarContext";
+import { useSidebar, SIDEBAR_WIDTH_PX } from "./SidebarContext";
 
 const iconClass = "w-5 h-5 shrink-0";
 
@@ -123,7 +123,7 @@ function SidebarContent({
 export default function Sidebar() {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
-  const { mobileOpen, setMobileOpen } = useSidebar();
+  const { mobileOpen, setMobileOpen, sidebarTranslateX, isDragging } = useSidebar();
 
   const closeMobile = () => setMobileOpen(false);
 
@@ -158,16 +158,25 @@ export default function Sidebar() {
         <SidebarContent open={open} />
       </aside>
 
-      {/* Mobile: Overlay mit abgedunkeltem Hintergrund + gleiche Sidebar */}
-      {mobileOpen && (
+      {/* Mobile: Overlay wenn offen oder während Drag; Sidebar folgt translateX */}
+      {(mobileOpen || isDragging) && (
         <div className="fixed inset-0 z-50 md:hidden" aria-modal="true" role="dialog">
           <button
             type="button"
             aria-label="Menü schließen"
-            className="absolute inset-0 bg-black/60"
+            className="absolute inset-0 bg-black transition-opacity duration-300 ease-out"
+            style={{
+              opacity: (SIDEBAR_WIDTH_PX + sidebarTranslateX) / SIDEBAR_WIDTH_PX * 0.6,
+            }}
             onClick={closeMobile}
           />
-          <aside className="absolute left-0 top-0 bottom-0 flex w-56 flex-col border-r border-white/10 bg-zinc-950 text-white shadow-xl">
+          <aside
+            className="absolute left-0 top-0 bottom-0 flex w-56 flex-col border-r border-white/10 bg-zinc-950 text-white shadow-xl"
+            style={{
+              transform: `translateX(${sidebarTranslateX}px)`,
+              transition: isDragging ? "none" : "transform 300ms ease",
+            }}
+          >
             <div className="flex h-14 items-center border-b border-white/10 px-3">
               <button
                 type="button"
