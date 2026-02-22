@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { ClerkProvider } from "@clerk/nextjs";
 import "./globals.css";
@@ -19,6 +19,10 @@ export const metadata: Metadata = {
     "Minimalistischer AI Fitness Coach: maßgeschneiderte Workouts, klare Progression und Fokus auf das, was zählt.",
 };
 
+export const viewport: Viewport = {
+  themeColor: "#09090b",
+};
+
 export default function RootLayout({
   children,
 }: Readonly<{
@@ -28,7 +32,7 @@ export default function RootLayout({
     <ClerkProvider>
       <html lang="de">
         <body
-          className={`${geistSans.variable} ${geistMono.variable} antialiased`}
+          className={`${geistSans.variable} ${geistMono.variable} antialiased bg-[#09090b]`}
         >
           {children}
         </body>
