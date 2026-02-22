@@ -19,14 +19,7 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const baseUrl =
-      process.env.NEXT_PUBLIC_APP_URL ||
-      process.env.VERCEL_URL?.startsWith("http")
-        ? process.env.VERCEL_URL
-        : process.env.VERCEL_URL
-          ? `https://${process.env.VERCEL_URL}`
-          : request.nextUrl.origin;
-    const redirectUri = `${baseUrl}/api/strava/callback`;
+    const redirectUri = "https://ai-coach-three-rust.vercel.app/api/strava/callback";
 
     const params = new URLSearchParams({
       client_id: clientId,
