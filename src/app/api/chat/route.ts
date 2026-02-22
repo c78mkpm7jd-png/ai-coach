@@ -2,8 +2,7 @@ import { createClient } from "@supabase/supabase-js";
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import OpenAI from "openai";
-// @ts-expect-error pdf-parse has no types
-import pdfParse from "pdf-parse";
+import pdfParse from "pdf-parse-fork";
 import {
   getCoachContext,
   analyzeSignals,
