@@ -86,6 +86,8 @@ export async function GET(request: Request) {
 
     const { searchParams } = new URL(request.url)
     const only = searchParams.get('only') as 'tip' | 'analysis' | null
+    const refreshTip = searchParams.get('refresh') === '1'
+    const today = new Date().toISOString().slice(0, 10)
 
     const [profileRes, checkinsRes] = await Promise.all([
       supabaseAdmin.from('profiles').select('*').eq('id', userId).single(),
@@ -199,42 +201,67 @@ export async function GET(request: Request) {
     let analysisBody: string | null = null
     let analysisPreviewRes: string | null = null
 
-    // 1. Allgemeiner Tipp (ohne Nutzerdaten) – nur wenn nicht only=analysis
+    // 1. Tipp des Tages: ein Mal pro User/Tag (preview + full zusammen). Aus Cache oder einmal generieren.
     if (only !== 'analysis') {
-      const tipSystemPrompt = `Du bist ein prägnanter Fitness- und Ernährungscoach. Antworte ausschließlich auf Deutsch.
+      if (!refreshTip) {
+        const { data: cached } = await supabaseAdmin
+          .from('daily_tips')
+          .select('coach_tip_title, coach_tip_preview, coach_tip_body')
+          .eq('user_id', userId)
+          .eq('date', today)
+          .maybeSingle()
+        if (cached?.coach_tip_title) {
+          coachTipTitle = cached.coach_tip_title
+          coachTipBody = cached.coach_tip_body
+          if (cached.coach_tip_preview) coachTipPreviewRes = cached.coach_tip_preview
+        }
+      }
+      if (!coachTipPreviewRes || coachTipPreviewRes === defaultTip.coachTipPreview) {
+        const tipSystemPrompt = `Du bist ein prägnanter Fitness- und Ernährungscoach. Antworte ausschließlich auf Deutsch.
 Deine Antwort muss valides JSON sein mit exakt diesen Feldern (kein anderer Text):
 - "greeting": eine kurze persönliche Begrüßung (1 Satz)
 - "trainingDay": Name des heutigen Trainingstags (z.B. "Oberkörper", "Beine", "Push", "Pull", "Ganzkörper") passend zu ${trainingDaysPerWeek} Trainingstagen pro Woche. Heute ist ${weekday}.
 - "trainingSubtext": ein kurzer Satz Fokus/Hinweis für das heutige Training
 - "coachTipTitle": eine kurze, prägnante Überschrift für den Tipp (mit Anführungszeichen)
-- "coachTipPreview": Genau EIN spannender Satz, der neugierig macht (max. 15 Wörter). Wird nur auf der Dashboard-Card angezeigt. Kein Spoiler des vollen Tipps.
-- "coachTipBody": Der vollständige Tipp: spezifische, wenig bekannte Insights aus Training, Ernährung, Regeneration, Schlaf, mentaler Stärke oder Supplementen. KEINE 0815-Tipps. Exakt 3–4 Sätze, sofort umsetzbar. Wird nur auf der Detailseite angezeigt.`
+- "coachTipPreview": Genau EIN Satz Zusammenfassung des Tipps (max. 15 Wörter). Muss dasselbe Thema wie coachTipBody behandeln. Wird auf der Dashboard-Card angezeigt.
+- "coachTipBody": Der vollständige Tipp zum GLEICHEN Thema wie coachTipPreview: spezifische, wenig bekannte Insights aus Training, Ernährung, Regeneration, Schlaf, mentaler Stärke oder Supplementen. KEINE 0815-Tipps. Exakt 3–4 Sätze, sofort umsetzbar. Wird auf der Detailseite angezeigt. preview und body gehören zusammen.`
 
-      const tipUserPrompt = `Heute ist ${weekday}. Generiere das JSON für Begrüßung, Trainingstag und einen allgemeinen Coach-Tipp (ohne Nutzerdaten).`
+        const tipUserPrompt = `Heute ist ${weekday}. Generiere EINEN Coach-Tipp. Gib preview (1 Satz) und full (3–4 Sätze) zum selben Thema. Dann das JSON für Begrüßung, Trainingstag und diesen einen Tipp.`
 
-      const tipCompletion = await openai.chat.completions.create({
-        model: 'gpt-4o',
-        messages: [
-          { role: 'system', content: tipSystemPrompt },
-          { role: 'user', content: tipUserPrompt },
-        ],
-        response_format: { type: 'json_object' },
-        temperature: 0.7,
-      })
+        const tipCompletion = await openai.chat.completions.create({
+          model: 'gpt-4o',
+          messages: [
+            { role: 'system', content: tipSystemPrompt },
+            { role: 'user', content: tipUserPrompt },
+          ],
+          response_format: { type: 'json_object' },
+          temperature: 0.7,
+        })
 
-      const tipContent = tipCompletion.choices[0]?.message?.content
-      if (tipContent) {
-        try {
-          const parsed = JSON.parse(tipContent) as Record<string, unknown>
-          greeting = (parsed.greeting as string) ?? defaultTip.greeting
-          trainingDay = (parsed.trainingDay as string) ?? defaultTip.trainingDay
-          trainingSubtext = (parsed.trainingSubtext as string) ?? defaultTip.trainingSubtext
-          coachTipTitle = ((parsed.coachTipTitle as string) ?? defaultTip.coachTipTitle).replace(/^["']|["']$/g, '')
-          coachTipBody = (parsed.coachTipBody as string) ?? defaultTip.coachTipBody
-          const coachTipPreview = (parsed.coachTipPreview as string)?.trim()
-          if (coachTipPreview) coachTipPreviewRes = coachTipPreview
-        } catch {
-          // keep defaults
+        const tipContent = tipCompletion.choices[0]?.message?.content
+        if (tipContent) {
+          try {
+            const parsed = JSON.parse(tipContent) as Record<string, unknown>
+            greeting = (parsed.greeting as string) ?? defaultTip.greeting
+            trainingDay = (parsed.trainingDay as string) ?? defaultTip.trainingDay
+            trainingSubtext = (parsed.trainingSubtext as string) ?? defaultTip.trainingSubtext
+            coachTipTitle = ((parsed.coachTipTitle as string) ?? defaultTip.coachTipTitle).replace(/^["']|["']$/g, '')
+            coachTipBody = (parsed.coachTipBody as string) ?? defaultTip.coachTipBody
+            const coachTipPreview = (parsed.coachTipPreview as string)?.trim()
+            if (coachTipPreview) coachTipPreviewRes = coachTipPreview
+            await supabaseAdmin.from('daily_tips').upsert(
+              {
+                user_id: userId,
+                date: today,
+                coach_tip_title: coachTipTitle,
+                coach_tip_preview: coachTipPreviewRes || defaultTip.coachTipPreview,
+                coach_tip_body: coachTipBody,
+              },
+              { onConflict: 'user_id,date' }
+            )
+          } catch {
+            // keep defaults
+          }
         }
       }
     }
@@ -280,6 +307,15 @@ Analysiere ausschließlich diese Daten und gib konkrete Handlungsempfehlungen.`
       }
     }
 
+    const tipOfDay = {
+      preview: coachTipPreviewRes || '',
+      full: coachTipBody,
+    }
+    const analysis =
+      hasCheckins && (analysisPreviewRes != null || analysisBody != null)
+        ? { preview: analysisPreviewRes || '', full: analysisBody || '' }
+        : null
+
     return NextResponse.json({
       macros: {
         calories: macros.calories,
@@ -290,10 +326,13 @@ Analysiere ausschließlich diese Daten und gib konkrete Handlungsempfehlungen.`
       greeting,
       trainingDay,
       trainingSubtext,
+      tipOfDay,
+      analysis,
+      hasCheckins,
+      // Legacy
       coachTipTitle,
       coachTipBody,
       coachTipPreview: coachTipPreviewRes || null,
-      hasCheckins,
       analysisTitle,
       analysisBody,
       analysisPreview: analysisPreviewRes,

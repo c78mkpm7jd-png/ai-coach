@@ -1,35 +1,52 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import Link from "next/link";
-
-type TipData = {
-  coachTipTitle: string;
-  coachTipBody: string;
-};
+import { useSearchParams } from "next/navigation";
 
 export default function TippDesTagesPage() {
-  const [data, setData] = useState<TipData | null>(null);
+  const searchParams = useSearchParams();
+  const fromUrl = useMemo(() => {
+    const preview = searchParams.get("preview");
+    const full = searchParams.get("full");
+    if (preview == null || full == null) return null;
+    try {
+      return { preview: decodeURIComponent(preview), full: decodeURIComponent(full) };
+    } catch {
+      return null;
+    }
+  }, [searchParams]);
+
+  const [data, setData] = useState<{ preview: string; full: string } | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
-  const load = () => {
+  useEffect(() => {
+    if (fromUrl) {
+      setData(fromUrl);
+      setLoading(false);
+      return;
+    }
+    let cancelled = false;
     fetch("/api/briefing")
       .then((r) => (r.ok ? r.json() : null))
-      .then((d) => d && setData({ coachTipTitle: d.coachTipTitle, coachTipBody: d.coachTipBody }))
-      .finally(() => setLoading(false));
-  };
+      .then((d) => {
+        if (!cancelled && d?.tipOfDay) setData(d.tipOfDay);
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [fromUrl]);
 
-  useEffect(() => {
-    load();
-  }, []);
-
-  const refresh = () => {
+  const refresh = async () => {
     setRefreshing(true);
-    fetch("/api/briefing?only=tip")
-      .then((r) => (r.ok ? r.json() : null))
-      .then((d) => d && setData({ coachTipTitle: d.coachTipTitle, coachTipBody: d.coachTipBody }))
-      .finally(() => setRefreshing(false));
+    const r = await fetch("/api/briefing?only=tip&refresh=1");
+    const d = r.ok ? await r.json() : null;
+    if (d?.tipOfDay) setData(d.tipOfDay);
+    setRefreshing(false);
   };
 
   if (loading) {
@@ -56,7 +73,7 @@ export default function TippDesTagesPage() {
             type="button"
             onClick={refresh}
             disabled={refreshing}
-            className="flex h-9 w-9 items-center justify-center rounded-lg text-white/50 hover:bg-white/10 hover:text-white disabled:opacity-50"
+            className="hidden h-9 w-9 shrink-0 items-center justify-center rounded-lg text-white/50 hover:bg-white/10 hover:text-white disabled:opacity-50 md:flex"
             aria-label="Neuen Tipp laden"
           >
             <svg
@@ -69,11 +86,11 @@ export default function TippDesTagesPage() {
             </svg>
           </button>
         </div>
-        {data?.coachTipTitle && (
-          <p className="mt-3 text-base font-semibold text-white">„{data.coachTipTitle}"</p>
+        {data?.preview && (
+          <p className="mt-3 text-base font-semibold text-white">{data.preview}</p>
         )}
         <p className="mt-2 text-sm leading-relaxed text-white/80">
-          {data?.coachTipBody || "Kein Tipp geladen."}
+          {data?.full || "Kein Tipp geladen."}
         </p>
       </section>
     </div>

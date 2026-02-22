@@ -26,13 +26,9 @@ function formatDayShort(isoDate: string) {
 
 type BriefingData = {
   macros: { calories: number; protein: number; carbs: number; fat: number };
-  coachTipTitle: string;
-  coachTipBody: string;
-  coachTipPreview?: string | null;
+  tipOfDay?: { preview: string; full: string };
+  analysis?: { preview: string; full: string } | null;
   hasCheckins?: boolean;
-  analysisTitle: string | null;
-  analysisBody: string | null;
-  analysisPreview?: string | null;
 };
 
 type CheckinRow = {
@@ -445,21 +441,35 @@ export default function DashboardPage() {
           </div>
         </Card>
 
-        {/* Tipp des Tages – nur preview, voller Tipp auf /dashboard/tipp-des-tages */}
-        <Card href="/dashboard/tipp-des-tages" className="hover:border-white/30 hover:shadow-lg hover:shadow-white/5 transition-shadow">
+        {/* Tipp des Tages – preview + full per URL an Detailseite */}
+        <Card
+          href={
+            briefing?.tipOfDay
+              ? `/dashboard/tipp-des-tages?preview=${encodeURIComponent(briefing.tipOfDay.preview)}&full=${encodeURIComponent(briefing.tipOfDay.full)}`
+              : "/dashboard/tipp-des-tages"
+          }
+          className="hover:border-white/30 hover:shadow-lg hover:shadow-white/5 transition-shadow"
+        >
           <p className="text-[10px] font-medium uppercase tracking-wider text-white/50">Tipp des Tages</p>
           <p className="mt-2 text-xs leading-snug text-white/90">
-            {briefing?.coachTipPreview || "Kein Tipp geladen."}
+            {briefing?.tipOfDay?.preview || "Kein Tipp geladen."}
           </p>
           <span className="mt-1 inline-block text-[10px] text-white/45">→ Mehr erfahren</span>
         </Card>
 
-        {/* Deine Analyse – nur preview, volle Analyse auf /dashboard/analyse */}
-        <Card href="/dashboard/analyse" className="hover:border-white/30 hover:shadow-lg hover:shadow-white/5 transition-shadow">
+        {/* Deine Analyse – preview + full per URL an Detailseite */}
+        <Card
+          href={
+            briefing?.hasCheckins && briefing?.analysis
+              ? `/dashboard/analyse?preview=${encodeURIComponent(briefing.analysis.preview)}&full=${encodeURIComponent(briefing.analysis.full)}`
+              : "/dashboard/analyse"
+          }
+          className="hover:border-white/30 hover:shadow-lg hover:shadow-white/5 transition-shadow"
+        >
           <p className="text-[10px] font-medium uppercase tracking-wider text-white/50">Deine Analyse</p>
           <p className="mt-2 text-xs leading-snug text-white/90">
             {briefing?.hasCheckins
-              ? (briefing?.analysisPreview || "Keine Analyse.")
+              ? (briefing?.analysis?.preview || "Keine Analyse.")
               : "Erfasse Check-ins für eine Analyse."}
           </p>
           <span className="mt-1 inline-block text-[10px] text-white/45">→ Mehr erfahren</span>

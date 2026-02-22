@@ -1,50 +1,58 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import Link from "next/link";
-
-type AnalysisData = {
-  hasCheckins?: boolean;
-  analysisTitle: string | null;
-  analysisBody: string | null;
-};
+import { useSearchParams } from "next/navigation";
 
 export default function AnalysePage() {
-  const [data, setData] = useState<AnalysisData | null>(null);
+  const searchParams = useSearchParams();
+  const fromUrl = useMemo(() => {
+    const preview = searchParams.get("preview");
+    const full = searchParams.get("full");
+    if (preview == null || full == null) return null;
+    try {
+      return { preview: decodeURIComponent(preview), full: decodeURIComponent(full) };
+    } catch {
+      return null;
+    }
+  }, [searchParams]);
+
+  const [data, setData] = useState<{ preview: string; full: string } | null>(null);
+  const [hasCheckins, setHasCheckins] = useState(false);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
-  const load = () => {
+  useEffect(() => {
+    if (fromUrl) {
+      setData(fromUrl);
+      setHasCheckins(true);
+      setLoading(false);
+      return;
+    }
+    let cancelled = false;
     fetch("/api/briefing")
       .then((r) => (r.ok ? r.json() : null))
-      .then((d) =>
-        d &&
-        setData({
-          hasCheckins: d.hasCheckins,
-          analysisTitle: d.analysisTitle ?? null,
-          analysisBody: d.analysisBody ?? null,
-        })
-      )
-      .finally(() => setLoading(false));
-  };
+      .then((d) => {
+        if (!cancelled) {
+          setHasCheckins(!!d?.hasCheckins);
+          if (d?.analysis) setData(d.analysis);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [fromUrl]);
 
-  useEffect(() => {
-    load();
-  }, []);
-
-  const refresh = () => {
+  const refresh = async () => {
     setRefreshing(true);
-    fetch("/api/briefing?only=analysis")
-      .then((r) => (r.ok ? r.json() : null))
-      .then((d) =>
-        d &&
-        setData({
-          hasCheckins: d.hasCheckins,
-          analysisTitle: d.analysisTitle ?? null,
-          analysisBody: d.analysisBody ?? null,
-        })
-      )
-      .finally(() => setRefreshing(false));
+    const r = await fetch("/api/briefing");
+    const d = r.ok ? await r.json() : null;
+    setHasCheckins(!!d?.hasCheckins);
+    if (d?.analysis) setData(d.analysis);
+    setRefreshing(false);
   };
 
   if (loading) {
@@ -67,12 +75,12 @@ export default function AnalysePage() {
       <section className="mt-6 rounded-xl border border-white/10 bg-white/5 p-5">
         <div className="flex items-center justify-between gap-2">
           <h2 className="text-sm font-medium uppercase tracking-wider text-white/50">Deine Analyse</h2>
-          {data?.hasCheckins && (
+          {hasCheckins && (
             <button
               type="button"
               onClick={refresh}
               disabled={refreshing}
-              className="flex h-9 w-9 items-center justify-center rounded-lg text-white/50 hover:bg-white/10 hover:text-white disabled:opacity-50"
+              className="hidden h-9 w-9 shrink-0 items-center justify-center rounded-lg text-white/50 hover:bg-white/10 hover:text-white disabled:opacity-50 md:flex"
               aria-label="Analyse neu laden"
             >
               <svg
@@ -86,12 +94,12 @@ export default function AnalysePage() {
             </button>
           )}
         </div>
-        {data?.analysisTitle && (
-          <p className="mt-3 text-base font-semibold text-white">„{data.analysisTitle}"</p>
+        {data?.preview && (
+          <p className="mt-3 text-base font-semibold text-white">{data.preview}</p>
         )}
         <p className="mt-2 text-sm leading-relaxed text-white/80">
-          {data?.hasCheckins
-            ? (data?.analysisBody || "Keine Analyse.")
+          {hasCheckins
+            ? (data?.full || "Keine Analyse.")
             : "Erfasse Check-ins für eine datenbasierte Analyse."}
         </p>
       </section>
