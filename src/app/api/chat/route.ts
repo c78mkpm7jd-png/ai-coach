@@ -6,6 +6,7 @@ import {
   getCoachContext,
   analyzeSignals,
   buildChatCoachContextBlock,
+  getCoachMemories,
   estimateTdee,
   getTargetCaloriesFromTdee,
   getMacrosSimple,
@@ -126,7 +127,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const [profileRes, checkinsRes, messagesRes] = await Promise.all([
+    const [profileRes, checkinsRes, messagesRes, coachMemories] = await Promise.all([
       supabaseAdmin.from("profiles").select("*").eq("id", userId).single(),
       supabaseAdmin
         .from("daily_checkins")
@@ -141,6 +142,7 @@ export async function POST(request: NextRequest) {
         .select("role, content")
         .eq("user_id", userId)
         .order("created_at", { ascending: true }),
+      getCoachMemories(supabaseAdmin, userId, 20),
     ]);
 
     const profile = profileRes.data as ProfileRow | null;
@@ -187,7 +189,51 @@ export async function POST(request: NextRequest) {
       })
       .join("\n");
 
-    const coachContextBlock = buildChatCoachContextBlock(coachCtx, coachSignals, checkinsSummary);
+    const coachContextBlock = buildChatCoachContextBlock(
+      coachCtx,
+      coachSignals,
+      checkinsSummary,
+      coachMemories
+    );
+
+    const openai = new OpenAI({ apiKey: openaiKey });
+
+    // Nach jeder Nutzer-Nachricht: OpenAI extrahiert wichtige Infos → in coach_memories speichern
+    try {
+      const extractRes = await openai.chat.completions.create({
+        model: "gpt-4o-mini",
+        messages: [
+          {
+            role: "system",
+            content: `Du extrahierst aus der Nutzer-Nachricht wichtige Informationen für ein Coach-Gedächtnis. Antworte NUR mit einem JSON-Objekt mit einem Feld "items" (Array). Jedes Element: { "memory": string, "category": string }.
+Kategorien: "persönlich" (z. B. Schlaf, Stress, Befinden), "gewohnheit" (z. B. Training morgens), "vorliebe" (z. B. mag kein Cardio), "ziel" (z. B. bis Sommer 5 kg abnehmen).
+Nur echte Aussagen extrahieren (persönliche Fakten, Gewohnheiten, Vorlieben, Ziele). Keine Fragen, keine Smalltalk-Floskeln. Maximal 3 Items pro Nachricht. Wenn nichts Relevantes: "items": [].
+Sprache der memory: Deutsch, knapp formuliert (z. B. "Schläft oft schlecht", "Trainiert immer morgens").`,
+          },
+          { role: "user", content },
+        ],
+        response_format: { type: "json_object" },
+        temperature: 0.2,
+      });
+      const rawExtract = extractRes.choices[0]?.message?.content?.trim();
+      if (rawExtract) {
+        const parsed = JSON.parse(rawExtract) as { items?: { memory?: string; category?: string }[] };
+        const items = Array.isArray(parsed.items) ? parsed.items : [];
+        for (const item of items) {
+          const memory = typeof item.memory === "string" ? item.memory.trim() : "";
+          const category = typeof item.category === "string" ? item.category.trim() || null : null;
+          if (memory.length > 0 && memory.length <= 500) {
+            await supabaseAdmin.from("coach_memories").insert({
+              user_id: userId,
+              memory,
+              category: category || null,
+            });
+          }
+        }
+      }
+    } catch (e) {
+      console.warn("Coach memory extraction failed:", e);
+    }
 
     const systemPrompt = `Du bist der persönliche AI Fitness Coach. Du arbeitest mit einem klaren Entscheidungs- und Prioritätssystem.
 
@@ -222,7 +268,6 @@ Antworte ausschließlich mit einem JSON-Objekt (kein anderer Text):
 - "chartType": string | null – Grafik nur wenn sinnvoll oder explizit gewünscht: "weight" | "calories" | "activity" | "energy_hunger" | "pie" | null
 - "chartTitle": string | null – optionaler Grafik-Titel`;
 
-    const openai = new OpenAI({ apiKey: openaiKey });
     const messagesForApi: OpenAI.Chat.ChatCompletionMessageParam[] = [
       { role: "system", content: systemPrompt },
       ...existingMessages.map((m) => ({

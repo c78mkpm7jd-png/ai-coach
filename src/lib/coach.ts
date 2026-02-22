@@ -3,6 +3,8 @@
  * Kontext, Signalerkennung, Scoring, Prioritäten – keine reaktive Antwort, sondern internes Modell.
  */
 
+import type { SupabaseClient } from "@supabase/supabase-js";
+
 export type Goal = "cut" | "lean-bulk" | "recomp" | "maintain";
 
 const ACTIVITY_MULTIPLIER: Record<string, number> = {
@@ -395,14 +397,47 @@ Regeln:
 - Keine generischen Ratschläge ohne Datenbasis.`;
 }
 
+export type CoachMemory = {
+  memory: string;
+  category: string | null;
+  created_at?: string;
+};
+
+/** Lädt die letzten Memories für einen Nutzer aus Supabase (chronologisch für den Prompt). */
+export async function getCoachMemories(
+  supabase: SupabaseClient,
+  userId: string,
+  limit = 20
+): Promise<CoachMemory[]> {
+  const { data } = await supabase
+    .from("coach_memories")
+    .select("memory, category, created_at")
+    .eq("user_id", userId)
+    .order("created_at", { ascending: false })
+    .limit(limit);
+  const rows = (data ?? []) as { memory: string; category: string | null; created_at: string }[];
+  return [...rows].reverse().map((m) => ({
+    memory: m.memory,
+    category: m.category,
+    created_at: m.created_at,
+  }));
+}
+
+/** Formatiert Memories für den System-Prompt. Coach soll sich aktiv darauf beziehen (z. B. "Du hast mal gesagt, …"). */
+export function formatMemoriesForPrompt(memories: CoachMemory[]): string {
+  if (memories.length === 0) return "";
+  const lines = memories.map((m) => `- [${m.category || "Sonstiges"}] ${m.memory}`).join("\n");
+  return `\n## Gedächtnis (beziehe dich aktiv darauf, z. B. "Du hast mal gesagt, …")\n${lines}\n`;
+}
+
 /** Erzeugt die System-Prompt-Bausteine für den Chat (Dual-Mode + Analyse). */
 export function buildChatCoachContextBlock(
   ctx: CoachContext,
   signals: CoachSignals,
-  checkinsSummary: string
+  checkinsSummary: string,
+  memories: CoachMemory[] = []
 ): string {
-  const { topPriorities, shouldStaySilent, positiveFeedbackOnly } = signals;
-  const name = ctx.userName ? ` Nutzer mit Namen "${ctx.userName}"` : " den Nutzer";
+  const { topPriorities, shouldStaySilent } = signals;
 
   let block = `## Kontext
 - Wochentag: ${ctx.weekday} (Fokus: ${ctx.weekdayFocus})
@@ -411,6 +446,10 @@ export function buildChatCoachContextBlock(
 - Check-ins (letzte 7): ${signals.checkinCount} vorhanden. Konfidenz: ${signals.confidence}
 ${checkinsSummary ? `\nCheck-in-Daten:\n${checkinsSummary}` : ""}
 `;
+
+  if (memories.length > 0) {
+    block += formatMemoriesForPrompt(memories);
+  }
 
   if (!shouldStaySilent && topPriorities.length > 0) {
     block += `\n## Prioritäten (nur im Analyse-Modus nutzen, max. 2 Themen)\n`;
