@@ -4,6 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { UserButton } from "@clerk/nextjs";
+import { useSidebar } from "./SidebarContext";
 
 const iconClass = "w-5 h-5 shrink-0";
 
@@ -40,51 +41,23 @@ function ClipboardIcon() {
   );
 }
 
-function UserIcon() {
-  return (
-    <svg className={iconClass} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-    </svg>
-  );
-}
-
 const navItems = [
   { href: "/dashboard", label: "Dashboard", icon: GridIcon },
   { href: "/chat", label: "Coach", icon: ChatIcon },
   { href: "/profil", label: "Einstellungen", icon: SettingsIcon },
 ];
 
-export default function Sidebar() {
+function SidebarContent({
+  open,
+  onLinkClick,
+}: {
+  open: boolean;
+  onLinkClick?: () => void;
+}) {
   const pathname = usePathname();
-  const [open, setOpen] = useState(false);
 
   return (
-    <aside
-      className={`flex shrink-0 flex-col border-r border-white/10 bg-zinc-950 text-white transition-[width] duration-200 ${
-        open ? "w-56" : "w-16"
-      }`}
-    >
-      <div className="flex h-14 items-center border-b border-white/10 px-3">
-        <button
-          type="button"
-          onClick={() => setOpen((o) => !o)}
-          className="flex h-9 w-9 items-center justify-center rounded-lg text-white/70 hover:bg-white/10 hover:text-white"
-          aria-label={open ? "Sidebar einklappen" : "Sidebar aufklappen"}
-        >
-          <svg
-            className={`h-5 w-5 transition-transform ${open ? "" : "rotate-180"}`}
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-          >
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 19l-7-7 7-7M18 19l-7-7 7-7" />
-          </svg>
-        </button>
-        {open && (
-          <span className="ml-2 truncate text-sm font-medium text-white/90">AI Fitness Coach</span>
-        )}
-      </div>
-
+    <>
       <nav className="flex flex-col gap-1 p-2">
         {navItems.map(({ href, label, icon: Icon }) => {
           const isActive = pathname === href || (href !== "/dashboard" && pathname.startsWith(href));
@@ -92,6 +65,7 @@ export default function Sidebar() {
             <Link
               key={href}
               href={href}
+              onClick={onLinkClick}
               className={`flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition ${
                 isActive
                   ? "bg-white/10 text-white"
@@ -99,15 +73,16 @@ export default function Sidebar() {
               }`}
             >
               <Icon />
-              {open && <span className="truncate">{label}</span>}
+              {(open ?? true) && <span className="truncate">{label}</span>}
             </Link>
           );
         })}
       </nav>
 
-      <div className="border-t border-white/10 p-2 space-y-1">
+      <div className="border-t border-white/10 space-y-1 p-2">
         <Link
           href="/checkin"
+          onClick={onLinkClick}
           className={`flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition ${
             pathname === "/checkin"
               ? "bg-white/10 text-white"
@@ -115,7 +90,7 @@ export default function Sidebar() {
           }`}
         >
           <ClipboardIcon />
-          {open && <span className="truncate">Check-in</span>}
+          {(open ?? true) && <span className="truncate">Check-in</span>}
         </Link>
         <div className="flex items-center gap-3 rounded-lg px-3 py-2.5">
           <UserButton
@@ -130,9 +105,10 @@ export default function Sidebar() {
               },
             }}
           />
-          {open && (
+          {(open ?? true) && (
             <Link
               href="/profil"
+              onClick={onLinkClick}
               className="truncate text-sm font-medium text-white/70 hover:text-white"
             >
               Profil
@@ -140,6 +116,75 @@ export default function Sidebar() {
           )}
         </div>
       </div>
-    </aside>
+    </>
+  );
+}
+
+export default function Sidebar() {
+  const pathname = usePathname();
+  const [open, setOpen] = useState(false);
+  const { mobileOpen, setMobileOpen } = useSidebar();
+
+  const closeMobile = () => setMobileOpen(false);
+
+  return (
+    <>
+      {/* Desktop: Sidebar wie bisher in der Spalte */}
+      <aside
+        className={`hidden md:flex shrink-0 flex-col border-r border-white/10 bg-zinc-950 text-white transition-[width] duration-200 ${
+          open ? "w-56" : "w-16"
+        }`}
+      >
+        <div className="flex h-14 items-center border-b border-white/10 px-3">
+          <button
+            type="button"
+            onClick={() => setOpen((o) => !o)}
+            className="flex h-9 w-9 items-center justify-center rounded-lg text-white/70 hover:bg-white/10 hover:text-white"
+            aria-label={open ? "Sidebar einklappen" : "Sidebar aufklappen"}
+          >
+            <svg
+              className={`h-5 w-5 transition-transform ${open ? "" : "rotate-180"}`}
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 19l-7-7 7-7M18 19l-7-7 7-7" />
+            </svg>
+          </button>
+          {open && (
+            <span className="ml-2 truncate text-sm font-medium text-white/90">AI Fitness Coach</span>
+          )}
+        </div>
+        <SidebarContent open={open} />
+      </aside>
+
+      {/* Mobile: Overlay mit abgedunkeltem Hintergrund + gleiche Sidebar */}
+      {mobileOpen && (
+        <div className="fixed inset-0 z-50 md:hidden" aria-modal="true" role="dialog">
+          <button
+            type="button"
+            aria-label="Menü schließen"
+            className="absolute inset-0 bg-black/60"
+            onClick={closeMobile}
+          />
+          <aside className="absolute left-0 top-0 bottom-0 flex w-56 flex-col border-r border-white/10 bg-zinc-950 text-white shadow-xl">
+            <div className="flex h-14 items-center border-b border-white/10 px-3">
+              <button
+                type="button"
+                onClick={closeMobile}
+                className="flex h-9 w-9 items-center justify-center rounded-lg text-white/70 hover:bg-white/10 hover:text-white"
+                aria-label="Menü schließen"
+              >
+                <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+              <span className="ml-2 truncate text-sm font-medium text-white/90">AI Fitness Coach</span>
+            </div>
+            <SidebarContent open={true} onLinkClick={closeMobile} />
+          </aside>
+        </div>
+      )}
+    </>
   );
 }

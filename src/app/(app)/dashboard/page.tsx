@@ -13,6 +13,7 @@ import {
   Tooltip,
   CartesianGrid,
 } from "recharts";
+import { useSidebar } from "@/components/layout/SidebarContext";
 
 function toDateKey(createdAt: string) {
   return createdAt.slice(0, 10);
@@ -88,6 +89,7 @@ export default function DashboardPage() {
   const [reminderModalOpen, setReminderModalOpen] = useState(false);
   const [reminderTime, setReminderTime] = useState("");
   const [reminderSaving, setReminderSaving] = useState(false);
+  const { setMobileOpen } = useSidebar();
 
   useEffect(() => {
     const y = new Date().getFullYear();
@@ -207,47 +209,84 @@ export default function DashboardPage() {
 
   const firstName = (user?.firstName as string | undefined) ?? "";
 
+  const openReminderModal = () => {
+    setReminderModalOpen(true);
+    fetch("/api/profile")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        const t = d?.data?.checkin_reminder_time;
+        setReminderTime(t ? String(t).slice(0, 5) : "09:00");
+      })
+      .catch(() => setReminderTime("09:00"));
+  };
+
+  const buttonBase = "rounded-lg px-3 py-2 text-xs font-medium shrink-0";
+  const btnPlanen = "border border-white/30 bg-white text-zinc-900 hover:bg-white/90";
+  const btnCheckinDone = "border border-emerald-500/50 bg-emerald-500/20 text-emerald-300 hover:bg-emerald-500/30";
+  const btnCheckinPending = "animate-pulse border border-amber-500/50 bg-amber-500/20 text-amber-300 hover:bg-amber-500/30";
+  const btnWochen = "border border-white/20 bg-white/5 text-white/80 hover:bg-white/10";
+
   return (
     <div className="mx-auto flex min-h-full max-w-4xl flex-col px-4 py-6 sm:py-8">
-      <header className="mb-6 flex items-center justify-between">
-        <div>
-          <h1 className="text-xl font-semibold text-white">
-            {greeting}{firstName ? `, ${firstName}` : ""}!
-          </h1>
-          <p className="mt-0.5 text-sm text-white/50">Dashboard</p>
-        </div>
-        <div className="flex items-center gap-2">
+      {/* Mobile: Hamburger + Greeting | Desktop: wie bisher */}
+      <header className="mb-4 flex items-center justify-between md:mb-6">
+        <div className="flex min-w-0 items-center gap-2 md:gap-0">
           <button
             type="button"
-            onClick={() => {
-              setReminderModalOpen(true);
-              fetch("/api/profile")
-                .then((r) => (r.ok ? r.json() : null))
-                .then((d) => {
-                  const t = d?.data?.checkin_reminder_time;
-                  setReminderTime(t ? String(t).slice(0, 5) : "09:00");
-                })
-                .catch(() => setReminderTime("09:00"));
-            }}
-            className="rounded-lg border border-white/30 bg-white px-3 py-1.5 text-xs font-medium text-zinc-900 hover:bg-white/90"
+            onClick={() => setMobileOpen(true)}
+            className="md:hidden flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-white/80 hover:bg-white/10 hover:text-white"
+            aria-label="Menü öffnen"
+          >
+            <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+            </svg>
+          </button>
+          <div className="min-w-0">
+            <h1 className="truncate text-xl font-semibold text-white">
+              {greeting}{firstName ? `, ${firstName}` : ""}!
+            </h1>
+            <p className="mt-0.5 text-sm text-white/50">Dashboard</p>
+          </div>
+        </div>
+        <div className="hidden items-center gap-2 md:flex">
+          <button
+            type="button"
+            onClick={openReminderModal}
+            className={`${buttonBase} ${btnPlanen}`}
           >
             Check-in planen
           </button>
           <Link
             href="/checkin"
-            className={
-              todayCheckin
-                ? "rounded-lg border border-emerald-500/50 bg-emerald-500/20 px-3 py-1.5 text-xs font-medium text-emerald-300 hover:bg-emerald-500/30"
-                : "animate-pulse rounded-lg border border-amber-500/50 bg-amber-500/20 px-3 py-1.5 text-xs font-medium text-amber-300 hover:bg-amber-500/30"
-            }
+            className={`${buttonBase} ${todayCheckin ? btnCheckinDone : btnCheckinPending}`}
           >
             {todayCheckin ? "Check-in ✓" : "Check-in ausstehend"}
           </Link>
-          <Link href="/dashboard/wochenbericht" className="text-xs font-medium text-white/60 hover:text-white">
+          <Link href="/dashboard/wochenbericht" className={`${buttonBase} ${btnWochen}`}>
             Wochenbericht →
           </Link>
         </div>
       </header>
+
+      {/* Mobile only: drei Buttons unter dem Header */}
+      <div className="mb-4 flex gap-2 md:hidden">
+        <button
+          type="button"
+          onClick={openReminderModal}
+          className={`flex-1 ${buttonBase} ${btnPlanen}`}
+        >
+          Check-in planen
+        </button>
+        <Link
+          href="/checkin"
+          className={`flex-1 text-center ${buttonBase} ${todayCheckin ? btnCheckinDone : btnCheckinPending}`}
+        >
+          {todayCheckin ? "Check-in ✓" : "Check-in"}
+        </Link>
+        <Link href="/dashboard/wochenbericht" className={`flex-1 text-center ${buttonBase} ${btnWochen}`}>
+          Wochenübersicht
+        </Link>
+      </div>
 
       {reminderModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onClick={() => !reminderSaving && setReminderModalOpen(false)}>
