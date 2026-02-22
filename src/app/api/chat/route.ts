@@ -2,6 +2,8 @@ import { createClient } from "@supabase/supabase-js";
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import OpenAI from "openai";
+// @ts-expect-error pdf-parse has no types
+import pdfParse from "pdf-parse";
 import {
   getCoachContext,
   analyzeSignals,
@@ -118,14 +120,60 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const body = await request.json();
-    const content = typeof body.content === "string" ? body.content.trim() : "";
-    if (!content) {
-      return NextResponse.json(
-        { error: "Nachricht darf nicht leer sein" },
-        { status: 400 }
-      );
+    const contentType = request.headers.get("content-type") ?? "";
+    let content = "";
+    let attachedPdfText: string | null = null;
+    let attachedImage: { base64: string; mime: string } | null = null;
+    let contentForDb = "";
+
+    if (contentType.includes("multipart/form-data")) {
+      const formData = await request.formData();
+      const textPart = formData.get("content");
+      content = typeof textPart === "string" ? textPart.trim() : "";
+      const file = formData.get("file");
+      if (file instanceof File && file.size > 0) {
+        const type = file.type.toLowerCase();
+        const allowedImages = ["image/jpeg", "image/jpg", "image/png"];
+        if (type === "application/pdf") {
+          const buffer = Buffer.from(await file.arrayBuffer());
+          try {
+            const pdf = await pdfParse(buffer);
+            attachedPdfText = typeof pdf.text === "string" ? pdf.text.trim() : "";
+          } catch (e) {
+            console.warn("PDF parse failed:", e);
+          }
+          contentForDb = content ? `${content} [PDF: ${file.name}]` : `[PDF angehängt: ${file.name}]`;
+        } else if (allowedImages.includes(type)) {
+          const base64 = Buffer.from(await file.arrayBuffer()).toString("base64");
+          attachedImage = { base64, mime: type };
+          contentForDb = content ? `${content} [Bild: ${file.name}]` : `[Bild angehängt: ${file.name}]`;
+        }
+      }
+      if (!content && !attachedPdfText && !attachedImage) {
+        return NextResponse.json(
+          { error: "Nachricht oder Datei (JPG/PNG/PDF) erforderlich" },
+          { status: 400 }
+        );
+      }
+      if (!contentForDb) contentForDb = content || " [Datei angehängt]";
+    } else {
+      const body = await request.json();
+      content = typeof body.content === "string" ? body.content.trim() : "";
+      if (!content) {
+        return NextResponse.json(
+          { error: "Nachricht darf nicht leer sein" },
+          { status: 400 }
+        );
+      }
+      contentForDb = content;
     }
+
+    const contentForExtraction = attachedPdfText
+      ? (content ? `${content}\n\n` : "") + `[Trainingsplan]\n${attachedPdfText}`
+      : content;
+    const contentForCompletionText = attachedPdfText
+      ? (content ? `${content}\n\n` : "") + `[Angehängter Trainingsplan]\n${attachedPdfText}`
+      : content;
 
     const [profileRes, checkinsRes, messagesRes, coachMemories] = await Promise.all([
       supabaseAdmin.from("profiles").select("*").eq("id", userId).single(),
@@ -198,41 +246,92 @@ export async function POST(request: NextRequest) {
 
     const openai = new OpenAI({ apiKey: openaiKey });
 
-    // Nach jeder Nutzer-Nachricht: OpenAI extrahiert wichtige Infos → in coach_memories speichern
-    try {
-      const extractRes = await openai.chat.completions.create({
-        model: "gpt-4o-mini",
-        messages: [
-          {
-            role: "system",
-            content: `Du extrahierst aus der Nutzer-Nachricht wichtige Informationen für ein Coach-Gedächtnis. Antworte NUR mit einem JSON-Objekt mit einem Feld "items" (Array). Jedes Element: { "memory": string, "category": string }.
-Kategorien: "persönlich" (z. B. Schlaf, Stress, Befinden), "gewohnheit" (z. B. Training morgens), "vorliebe" (z. B. mag kein Cardio), "ziel" (z. B. bis Sommer 5 kg abnehmen).
-Nur echte Aussagen extrahieren (persönliche Fakten, Gewohnheiten, Vorlieben, Ziele). Keine Fragen, keine Smalltalk-Floskeln. Maximal 3 Items pro Nachricht. Wenn nichts Relevantes: "items": [].
-Sprache der memory: Deutsch, knapp formuliert (z. B. "Schläft oft schlecht", "Trainiert immer morgens").`,
-          },
-          { role: "user", content },
-        ],
-        response_format: { type: "json_object" },
-        temperature: 0.2,
-      });
-      const rawExtract = extractRes.choices[0]?.message?.content?.trim();
-      if (rawExtract) {
-        const parsed = JSON.parse(rawExtract) as { items?: { memory?: string; category?: string }[] };
-        const items = Array.isArray(parsed.items) ? parsed.items : [];
-        for (const item of items) {
-          const memory = typeof item.memory === "string" ? item.memory.trim() : "";
-          const category = typeof item.category === "string" ? item.category.trim() || null : null;
-          if (memory.length > 0 && memory.length <= 500) {
-            await supabaseAdmin.from("coach_memories").insert({
-              user_id: userId,
-              memory,
-              category: category || null,
-            });
+    // Bild: Vision-Extraktion (Übungen, Geräte, Struktur) → coach_memories
+    if (attachedImage && contentForCompletionText) {
+      try {
+        const visionExtract = await openai.chat.completions.create({
+          model: "gpt-4o-mini",
+          messages: [
+            {
+              role: "system",
+              content: `Du analysierst ein Bild (Trainingsplan, Screenshot, Tabelle). Extrahiere für das Coach-Gedächtnis:
+- Gym-Ausstattung / Geräte (falls erkennbar): "Gym hat X", "Nutzer trainiert mit Y"
+- Übungen und Maschinen: jede erkennbare Übung als memory, Kategorie "übung" oder "gym_ausstattung"
+Antworte NUR mit JSON: { "items": [ { "memory": string, "category": string } ] }. Kategorien: "gym_ausstattung", "übung". Deutsch, knapp. Maximal 15 Einträge.`,
+            },
+            {
+              role: "user",
+              content: [
+                { type: "text", text: "Extrahiere aus diesem Bild alle Übungen und Geräte für das Gedächtnis." },
+                {
+                  type: "image_url",
+                  image_url: { url: `data:${attachedImage.mime};base64,${attachedImage.base64}` },
+                },
+              ],
+            },
+          ],
+          response_format: { type: "json_object" },
+          temperature: 0.2,
+        });
+        const raw = visionExtract.choices[0]?.message?.content?.trim();
+        if (raw) {
+          const parsed = JSON.parse(raw) as { items?: { memory?: string; category?: string }[] };
+          const items = Array.isArray(parsed.items) ? parsed.items : [];
+          for (const item of items) {
+            const memory = typeof item.memory === "string" ? item.memory.trim() : "";
+            const category = typeof item.category === "string" ? item.category.trim() || null : null;
+            if (memory.length > 0 && memory.length <= 500) {
+              await supabaseAdmin.from("coach_memories").insert({
+                user_id: userId,
+                memory,
+                category: category || null,
+              });
+            }
           }
         }
+      } catch (e) {
+        console.warn("Vision memory extraction failed:", e);
       }
-    } catch (e) {
-      console.warn("Coach memory extraction failed:", e);
+    }
+
+    // Text/PDF: OpenAI extrahiert wichtige Infos (inkl. Gym-Ausstattung) → coach_memories
+    if (contentForExtraction) {
+      try {
+        const maxItems = attachedPdfText ? 15 : 5;
+        const extractRes = await openai.chat.completions.create({
+          model: "gpt-4o-mini",
+          messages: [
+            {
+              role: "system",
+              content: `Du extrahierst aus der Nutzer-Nachricht (und ggf. angehängtem Trainingsplan) wichtige Informationen für ein Coach-Gedächtnis. Antworte NUR mit einem JSON-Objekt mit einem Feld "items" (Array). Jedes Element: { "memory": string, "category": string }.
+Kategorien: "persönlich", "gewohnheit", "vorliebe", "ziel", "gym_ausstattung" (Geräte/Ausstattung: "Hat keinen Kabelzug", "Gym hat Langhantel und Kurzhanteln", "Zu Hause nur Widerstandsband" – was Nutzer hat oder nicht hat).
+Nur echte Aussagen extrahieren. Bei Gym-Ausstattung: jede Erwähnung als eigene memory. Maximal ${maxItems} Items. Wenn nichts Relevantes: "items": [].
+Sprache der memory: Deutsch, knapp (z. B. "Schläft oft schlecht", "Trainiert morgens", "Gym hat Kabelzug und Beinpresse").`,
+            },
+            { role: "user", content: contentForExtraction },
+          ],
+          response_format: { type: "json_object" },
+          temperature: 0.2,
+        });
+        const rawExtract = extractRes.choices[0]?.message?.content?.trim();
+        if (rawExtract) {
+          const parsed = JSON.parse(rawExtract) as { items?: { memory?: string; category?: string }[] };
+          const items = Array.isArray(parsed.items) ? parsed.items : [];
+          for (const item of items) {
+            const memory = typeof item.memory === "string" ? item.memory.trim() : "";
+            const category = typeof item.category === "string" ? item.category.trim() || null : null;
+            if (memory.length > 0 && memory.length <= 500) {
+              await supabaseAdmin.from("coach_memories").insert({
+                user_id: userId,
+                memory,
+                category: category || null,
+              });
+            }
+          }
+        }
+      } catch (e) {
+        console.warn("Coach memory extraction failed:", e);
+      }
     }
 
     const systemPrompt = `Du bist der persönliche AI Fitness Coach. Du arbeitest mit einem klaren Entscheidungs- und Prioritätssystem.
@@ -259,6 +358,8 @@ Wenn die Nachricht emotional beginnt aber Daten enthält: Zuerst Emotion validie
 - Direkt, respektvoll, konstruktiv. Kein künstliches Lob. Unsicherheit offen kommunizieren wenn Datenlage schwach.
 - Beziehe dich auf konkrete Daten: "Letzte Woche hattest du …", "Im Vergleich zu Montag …"
 - Ernährung: messbar ("+30g Protein"), konkret ("2 Eier + 250g Skyr"), umsetzbar heute. Keine Floskeln wie "achte auf Ernährung".
+- **Gym-Ausstattung:** Wenn im Gedächtnis Ausstattung/Geräte stehen (z. B. "Hat keinen Kabelzug", "Gym hat X"): Empfehle nur Übungen, die mit dieser Ausstattung machbar sind. Erwähne keine Geräte, die der Nutzer nicht hat.
+- **Trainingsplan (Bild/PDF):** Bei angehängtem Plan: Analysiere Übungen, trainierte Muskeln, Struktur (z. B. Push/Pull/Legs) und gib kurze, konkrete Verbesserungsvorschläge.
 
 ${coachContextBlock}
 
@@ -268,13 +369,23 @@ Antworte ausschließlich mit einem JSON-Objekt (kein anderer Text):
 - "chartType": string | null – Grafik nur wenn sinnvoll oder explizit gewünscht: "weight" | "calories" | "activity" | "energy_hunger" | "pie" | null
 - "chartTitle": string | null – optionaler Grafik-Titel`;
 
+    const userMessageContent: OpenAI.Chat.ChatCompletionMessageParam["content"] = attachedImage
+      ? [
+          { type: "text", text: contentForCompletionText || "Analysiere bitte den angehängten Trainingsplan: Welche Übungen, welche Muskeln, Struktur (z. B. Push/Pull/Legs), Verbesserungsvorschläge." },
+          {
+            type: "image_url",
+            image_url: { url: `data:${attachedImage.mime};base64,${attachedImage.base64}` },
+          },
+        ]
+      : contentForCompletionText;
+
     const messagesForApi: OpenAI.Chat.ChatCompletionMessageParam[] = [
       { role: "system", content: systemPrompt },
       ...existingMessages.map((m) => ({
         role: m.role as "user" | "assistant" | "system",
         content: m.content,
       })),
-      { role: "user", content },
+      { role: "user", content: userMessageContent },
     ];
 
     const completion = await openai.chat.completions.create({
@@ -383,7 +494,7 @@ Antworte ausschließlich mit einem JSON-Objekt (kein anderer Text):
       supabaseAdmin.from("chat_messages").insert({
         user_id: userId,
         role: "user",
-        content,
+        content: contentForDb,
       }).select("id, created_at").single(),
       supabaseAdmin.from("chat_messages").insert({
         user_id: userId,
