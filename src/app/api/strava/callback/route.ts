@@ -14,26 +14,43 @@ const supabaseAdmin = createClient(supabaseUrl, supabaseServiceRoleKey, {
   auth: { autoRefreshToken: false, persistSession: false },
 });
 
+function redirectToEinstellungen(origin: string, params: string) {
+  const url = `${origin}/einstellungen${params ? `?${params}` : ""}`;
+  return NextResponse.redirect(url);
+}
+
 export async function GET(request: NextRequest) {
+  const origin = request.nextUrl.origin;
+
   try {
     const searchParams = request.nextUrl.searchParams;
     const code = searchParams.get("code");
     const state = searchParams.get("state"); // userId von auth
     const error = searchParams.get("error");
 
+    console.log("[Strava callback] URL params:", {
+      hasCode: !!code,
+      codeLength: code?.length ?? 0,
+      hasState: !!state,
+      state: state ? `${state.slice(0, 8)}...` : null,
+      error: error ?? null,
+    });
+
     if (error) {
-      console.warn("Strava OAuth error:", error);
-      return NextResponse.redirect(new URL("/einstellungen?strava=denied", request.url));
+      console.warn("[Strava callback] OAuth error:", error);
+      return redirectToEinstellungen(origin, "strava=denied");
     }
 
     if (!code || !state) {
-      return NextResponse.redirect(new URL("/einstellungen?strava=error", request.url));
+      console.warn("[Strava callback] Missing code or state:", { code: !!code, state: !!state });
+      return redirectToEinstellungen(origin, "strava=error");
     }
 
     const clientId = process.env.STRAVA_CLIENT_ID;
     const clientSecret = process.env.STRAVA_CLIENT_SECRET;
     if (!clientId || !clientSecret) {
-      return NextResponse.redirect(new URL("/einstellungen?strava=config", request.url));
+      console.warn("[Strava callback] Missing STRAVA_CLIENT_ID or STRAVA_CLIENT_SECRET");
+      return redirectToEinstellungen(origin, "strava=config");
     }
 
     const redirectUri = "https://ai-coach-three-rust.vercel.app/api/strava/callback";
@@ -50,41 +67,55 @@ export async function GET(request: NextRequest) {
       }),
     });
 
+    const tokenBody = await tokenRes.text();
     if (!tokenRes.ok) {
-      const text = await tokenRes.text();
-      console.warn("Strava token exchange failed:", tokenRes.status, text);
-      return NextResponse.redirect(new URL("/einstellungen?strava=error", request.url));
+      console.warn("[Strava callback] Token exchange failed:", {
+        status: tokenRes.status,
+        body: tokenBody,
+      });
+      return redirectToEinstellungen(origin, "strava=error");
     }
 
-    const data = (await tokenRes.json()) as {
-      access_token: string;
-      refresh_token: string;
-      expires_at: number;
-    };
+    let data: { access_token: string; refresh_token: string; expires_at: number };
+    try {
+      data = JSON.parse(tokenBody) as typeof data;
+    } catch (e) {
+      console.error("[Strava callback] Token response not JSON:", tokenBody.slice(0, 200));
+      return redirectToEinstellungen(origin, "strava=error");
+    }
 
     const userId = state;
-    const { error: updateError } = await supabaseAdmin
+    const payload = {
+      id: userId,
+      strava_access_token: data.access_token,
+      strava_refresh_token: data.refresh_token,
+      strava_token_expiry: data.expires_at,
+      strava_connected: true,
+      updated_at: new Date().toISOString(),
+    };
+
+    const { data: upsertData, error: updateError } = await supabaseAdmin
       .from("profiles")
-      .upsert(
-        {
-          id: userId,
-          strava_access_token: data.access_token,
-          strava_refresh_token: data.refresh_token,
-          strava_token_expiry: data.expires_at,
-          strava_connected: true,
-          updated_at: new Date().toISOString(),
-        },
-        { onConflict: "id" }
-      );
+      .upsert(payload, { onConflict: "id" })
+      .select("id, strava_connected");
 
     if (updateError) {
-      console.error("Strava profile update:", updateError);
-      return NextResponse.redirect(new URL("/einstellungen?strava=error", request.url));
+      console.error("[Strava callback] Supabase upsert failed:", {
+        message: updateError.message,
+        code: updateError.code,
+        details: updateError.details,
+      });
+      return redirectToEinstellungen(origin, "strava=error");
     }
 
-    return NextResponse.redirect(new URL("/einstellungen?strava=connected", request.url));
+    console.log("[Strava callback] Success:", {
+      userId: userId.slice(0, 8) + "...",
+      strava_connected: upsertData?.[0]?.strava_connected ?? true,
+    });
+
+    return redirectToEinstellungen(origin, "strava=connected");
   } catch (err) {
-    console.error("Strava callback:", err);
-    return NextResponse.redirect(new URL("/einstellungen?strava=error", request.url));
+    console.error("[Strava callback] Exception:", err);
+    return redirectToEinstellungen(origin, "strava=error");
   }
 }
