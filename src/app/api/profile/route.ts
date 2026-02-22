@@ -138,7 +138,7 @@ export async function PATCH(request: NextRequest) {
     const { error } = await supabaseAdmin
       .from('profiles')
       .update({
-        checkin_reminder_time: time === null || time === '' ? null : time.slice(0, 5),
+        checkin_reminder_time: time == null || time === '' ? null : String(time).slice(0, 5),
         updated_at: new Date().toISOString(),
       })
       .eq('id', userId);
