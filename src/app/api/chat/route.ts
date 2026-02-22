@@ -130,7 +130,6 @@ export async function POST(request: NextRequest) {
       const textPart = formData.get("content");
       content = typeof textPart === "string" ? textPart.trim() : "";
       const files = formData.getAll("file").filter((f): f is File => f instanceof File && f.size > 0);
-      const allowedImages = ["image/jpeg", "image/jpg", "image/png"];
       const imageNames: string[] = [];
       const pdfNames: string[] = [];
       for (const file of files) {
@@ -146,7 +145,7 @@ export async function POST(request: NextRequest) {
             }
           }
           pdfNames.push(file.name);
-        } else if (allowedImages.includes(type)) {
+        } else if (type.startsWith("image/")) {
           const base64 = Buffer.from(await file.arrayBuffer()).toString("base64");
           attachedImages.push({ base64, mime: type });
           imageNames.push(file.name);

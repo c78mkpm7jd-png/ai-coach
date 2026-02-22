@@ -4,9 +4,8 @@ import { useState, useEffect, useRef, FormEvent, useCallback } from "react";
 import MessageChart, { type ChartPayload } from "@/components/chat/MessageChart";
 import { useSidebar } from "@/components/layout/SidebarContext";
 
-const IMAGE_TYPES = ["image/jpeg", "image/jpg", "image/png"];
 function isImage(file: File) {
-  return IMAGE_TYPES.includes(file.type.toLowerCase());
+  return file.type.startsWith("image/");
 }
 
 type ChatMessage = {
@@ -28,11 +27,26 @@ export default function ChatPage() {
   const [loading, setLoading] = useState(false);
   const [loadingHistory, setLoadingHistory] = useState(true);
   const [attachedList, setAttachedList] = useState<AttachedItem[]>([]);
-  const [lightboxImage, setLightboxImage] = useState<string | null>(null);
+  const [lightboxImages, setLightboxImages] = useState<string[]>([]);
+  const [lightboxIndex, setLightboxIndex] = useState(0);
+  const lightboxTouchStart = useRef<number | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
-  const allowedTypes = "image/jpeg,image/png,image/jpg,application/pdf";
+  const allowedTypes = "image/*,application/pdf";
+  const isLightboxOpen = lightboxImages.length > 0;
+  const lightboxCurrent = lightboxImages[lightboxIndex] ?? null;
+
+  useEffect(() => {
+    if (!isLightboxOpen) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setLightboxImages([]);
+      if (e.key === "ArrowLeft" && lightboxIndex > 0) setLightboxIndex((i) => i - 1);
+      if (e.key === "ArrowRight" && lightboxIndex < lightboxImages.length - 1) setLightboxIndex((i) => i + 1);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [isLightboxOpen, lightboxIndex, lightboxImages.length]);
   const maxFileSizeMb = 10;
   const maxFileSize = maxFileSizeMb * 1024 * 1024;
 
@@ -216,13 +230,16 @@ export default function ChatPage() {
                     }`}
                   >
                     {isUser && m.attachedImageUrls && m.attachedImageUrls.length > 0 && (
-                      <div className="mb-2 flex flex-wrap gap-1.5">
+                      <div className="mb-2 grid max-w-[208px] grid-cols-2 gap-1 sm:max-w-[408px]">
                         {m.attachedImageUrls.map((url, i) => (
                           <button
                             key={i}
                             type="button"
-                            onClick={() => setLightboxImage(url)}
-                            className="h-14 w-14 shrink-0 overflow-hidden rounded-lg border border-zinc-300 object-cover focus:outline-none focus:ring-2 focus:ring-zinc-400"
+                            onClick={() => {
+                              setLightboxImages(m.attachedImageUrls!);
+                              setLightboxIndex(i);
+                            }}
+                            className="aspect-square max-h-[200px] max-w-[200px] overflow-hidden rounded-[12px] border border-zinc-200 object-cover focus:outline-none focus:ring-2 focus:ring-zinc-400"
                           >
                             <img src={url} alt="" className="h-full w-full object-cover" />
                           </button>
@@ -257,18 +274,18 @@ export default function ChatPage() {
             {attachedList.map((item, index) => (
               <div key={index} className="relative">
                 {item.previewUrl ? (
-                  <div className="h-16 w-16 overflow-hidden rounded-lg border border-white/20 bg-zinc-900">
+                  <div className="h-[72px] w-[72px] overflow-hidden rounded-[12px] border border-white/20 bg-zinc-900">
                     <img src={item.previewUrl} alt="" className="h-full w-full object-cover" />
                   </div>
                 ) : (
-                  <div className="flex h-16 w-16 items-center justify-center rounded-lg border border-white/20 bg-zinc-900 px-1.5 text-center text-[10px] text-white/70">
+                  <div className="flex h-[72px] w-[72px] items-center justify-center rounded-[12px] border border-white/20 bg-zinc-900 px-1.5 text-center text-[10px] text-white/70">
                     PDF
                   </div>
                 )}
                 <button
                   type="button"
                   onClick={() => removeAttached(index)}
-                  className="absolute -right-1.5 -top-1.5 flex h-6 w-6 items-center justify-center rounded-full bg-zinc-700 text-white shadow hover:bg-red-500"
+                  className="absolute -right-1 -top-1 flex h-6 w-6 items-center justify-center rounded-full bg-zinc-700 text-white shadow hover:bg-red-500"
                   aria-label="Entfernen"
                 >
                   <span className="sr-only">Entfernen</span>
@@ -286,6 +303,7 @@ export default function ChatPage() {
             type="file"
             accept={allowedTypes}
             multiple
+            capture="environment"
             onChange={handleFileChange}
             className="hidden"
             aria-hidden
@@ -322,31 +340,84 @@ export default function ChatPage() {
         <p className="mt-1.5 text-xs text-white/40">Mehrere JPG/PNG oder PDF (max. {maxFileSizeMb} MB)</p>
       </form>
 
-      {/* Lightbox: große Bildansicht mit X */}
-      {lightboxImage && (
+      {/* Lightbox: dunkler Hintergrund, X schließen, Swipe zwischen Bildern */}
+      {isLightboxOpen && lightboxCurrent && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 p-4"
-          onClick={() => setLightboxImage(null)}
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/95 p-4"
+          onClick={() => setLightboxImages([])}
           role="dialog"
           aria-modal="true"
           aria-label="Bild vergrößert"
         >
           <button
             type="button"
-            onClick={() => setLightboxImage(null)}
-            className="absolute right-4 top-4 flex h-10 w-10 items-center justify-center rounded-full bg-white/20 text-white hover:bg-white/30"
+            onClick={() => setLightboxImages([])}
+            className="absolute right-4 top-4 z-10 flex h-10 w-10 items-center justify-center rounded-full bg-white/20 text-white hover:bg-white/30"
             aria-label="Schließen"
           >
             <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
             </svg>
           </button>
-          <img
-            src={lightboxImage}
-            alt="Vergrößert"
-            className="max-h-[90vh] max-w-full object-contain"
+
+          <div
+            className="relative flex max-h-[90vh] max-w-full items-center justify-center"
             onClick={(e) => e.stopPropagation()}
-          />
+            onTouchStart={(e) => {
+              lightboxTouchStart.current = e.touches[0].clientX;
+            }}
+            onTouchEnd={(e) => {
+              const start = lightboxTouchStart.current;
+              if (start == null) return;
+              const end = e.changedTouches[0].clientX;
+              const delta = start - end;
+              const threshold = 50;
+              if (delta > threshold && lightboxIndex < lightboxImages.length - 1) {
+                setLightboxIndex((i) => i + 1);
+              } else if (delta < -threshold && lightboxIndex > 0) {
+                setLightboxIndex((i) => i - 1);
+              }
+              lightboxTouchStart.current = null;
+            }}
+          >
+            <img
+              key={lightboxIndex}
+              src={lightboxCurrent}
+              alt=""
+              className="max-h-[90vh] max-w-full rounded-[12px] object-contain"
+            />
+            {lightboxImages.length > 1 && (
+              <>
+                {lightboxIndex > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setLightboxIndex((i) => i - 1)}
+                    className="absolute left-2 top-1/2 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full bg-white/20 text-white hover:bg-white/30 md:left-4"
+                    aria-label="Vorheriges Bild"
+                  >
+                    <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                    </svg>
+                  </button>
+                )}
+                {lightboxIndex < lightboxImages.length - 1 && (
+                  <button
+                    type="button"
+                    onClick={() => setLightboxIndex((i) => i + 1)}
+                    className="absolute right-2 top-1/2 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full bg-white/20 text-white hover:bg-white/30 md:right-4"
+                    aria-label="Nächstes Bild"
+                  >
+                    <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                    </svg>
+                  </button>
+                )}
+                <span className="absolute bottom-4 left-1/2 -translate-x-1/2 rounded-full bg-black/50 px-3 py-1 text-sm text-white/90">
+                  {lightboxIndex + 1} / {lightboxImages.length}
+                </span>
+              </>
+            )}
+          </div>
         </div>
       )}
     </div>
