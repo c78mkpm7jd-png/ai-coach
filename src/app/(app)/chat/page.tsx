@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef, FormEvent } from "react";
+import { useState, useEffect, useRef, FormEvent, KeyboardEvent } from "react";
 import MessageChart, { type ChartPayload } from "@/components/chat/MessageChart";
 
 type ChatMessage = {
@@ -11,12 +11,15 @@ type ChatMessage = {
   chart?: ChartPayload;
 };
 
+const INPUT_PLACEHOLDER = "Nachricht an deinen Coach …";
+
 export default function ChatPage() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [loadingHistory, setLoadingHistory] = useState(true);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
     fetch("/api/chat")
@@ -30,14 +33,15 @@ export default function ChatPage() {
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
-  }, [messages]);
+  }, [messages, loading]);
 
-  async function handleSubmit(e: FormEvent) {
-    e.preventDefault();
+  async function handleSubmit(e?: FormEvent) {
+    e?.preventDefault();
     const text = input.trim();
     if (!text || loading) return;
 
     setInput("");
+    if (textareaRef.current) textareaRef.current.style.height = "auto";
     const userMessage: ChatMessage = {
       id: `temp-${Date.now()}`,
       role: "user",
@@ -60,7 +64,6 @@ export default function ChatPage() {
       }
 
       if (data.message) {
-        console.log("[Chat] API Response:", { fullResponse: data, message: data.message, hasChart: !!data.message.chart, chartData: data.message.chart });
         const msg: ChatMessage = {
           id: data.message.id ?? `msg-${Date.now()}`,
           role: "assistant",
@@ -76,7 +79,6 @@ export default function ChatPage() {
             title: chartObj.title ?? null,
             data: chartObj.data,
           } as ChartPayload;
-          console.log("[Chat] Chart attached:", msg.chart.type, "data points:", msg.chart.data.length);
         }
         setMessages((prev) => [...prev, msg]);
       }
@@ -96,20 +98,29 @@ export default function ChatPage() {
     }
   }
 
+  function onKeyDown(e: KeyboardEvent<HTMLTextAreaElement>) {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      handleSubmit();
+    }
+  }
+
+  function onTextareaInput(e: React.FormEvent<HTMLTextAreaElement>) {
+    const el = e.currentTarget;
+    el.style.height = "auto";
+    el.style.height = `${Math.min(el.scrollHeight, 120)}px`;
+  }
+
   return (
-    <div className="flex h-[calc(100svh-5rem)] flex-col bg-zinc-950 md:h-screen">
+    <div className="flex h-[100dvh] min-h-0 flex-col bg-zinc-950 md:h-[100dvh]">
       <header className="shrink-0 border-b border-white/10 px-4 py-3">
-        <p className="text-xs font-medium uppercase tracking-[0.2em] text-white/40">
-          Coach
-        </p>
-        <h1 className="text-lg font-semibold tracking-tight text-white">
-          Dein AI Fitness Coach
-        </h1>
+        <p className="text-xs font-medium uppercase tracking-[0.2em] text-white/40">Coach</p>
+        <h1 className="text-lg font-semibold tracking-tight text-white">Dein AI Fitness Coach</h1>
       </header>
 
       <div
         ref={scrollRef}
-        className="min-h-0 flex-1 overflow-y-auto px-4 py-4"
+        className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-4 py-4 pb-4"
       >
         {loadingHistory ? (
           <div className="flex justify-center py-8">
@@ -120,12 +131,10 @@ export default function ChatPage() {
             <p className="text-sm text-white/60">
               Stell deinem Coach Fragen zu Training, Ernährung und Fortschritt.
             </p>
-            <p className="mt-1 text-xs text-white/40">
-              Er kennt dein Profil, Makros und die letzten Check-ins.
-            </p>
+            <p className="mt-1 text-xs text-white/40">Er kennt dein Profil, Makros und die letzten Check-ins.</p>
           </div>
         ) : (
-          <div className="space-y-3">
+          <div className="space-y-4">
             {messages.map((m) => {
               const isUser = m.role === "user";
               return (
@@ -134,10 +143,10 @@ export default function ChatPage() {
                   className={`flex ${isUser ? "justify-end" : "justify-start"}`}
                 >
                   <div
-                    className={`max-w-[85%] rounded-2xl px-4 py-2.5 text-sm min-w-[200px] ${
+                    className={`max-w-[85%] min-w-0 rounded-2xl px-4 py-2.5 text-sm ${
                       isUser
-                        ? "bg-white text-zinc-950 rounded-br-md"
-                        : "bg-white/10 text-white border border-white/10 rounded-bl-md"
+                        ? "rounded-br-md bg-white text-zinc-950"
+                        : "rounded-bl-md border border-white/10 bg-white/10 text-white"
                     }`}
                   >
                     <p className="whitespace-pre-wrap break-words">{m.content}</p>
@@ -148,8 +157,10 @@ export default function ChatPage() {
             })}
             {loading && (
               <div className="flex justify-start">
-                <div className="max-w-[85%] rounded-2xl rounded-bl-md border border-white/10 bg-white/10 px-4 py-2.5 text-sm text-white/70">
-                  …
+                <div className="flex items-center gap-1.5 rounded-2xl rounded-bl-md border border-white/10 bg-white/10 px-4 py-3">
+                  <span className="h-2 w-2 animate-bounce rounded-full bg-white/70 [animation-delay:0ms]" />
+                  <span className="h-2 w-2 animate-bounce rounded-full bg-white/70 [animation-delay:150ms]" />
+                  <span className="h-2 w-2 animate-bounce rounded-full bg-white/70 [animation-delay:300ms]" />
                 </div>
               </div>
             )}
@@ -157,28 +168,36 @@ export default function ChatPage() {
         )}
       </div>
 
-      <form
-        onSubmit={handleSubmit}
+      <div
         className="shrink-0 border-t border-white/10 bg-zinc-950 p-3"
+        style={{ paddingBottom: "max(0.75rem, env(safe-area-inset-bottom))" }}
       >
-        <div className="flex gap-2">
-          <input
-            type="text"
+        <form onSubmit={handleSubmit} className="flex items-end gap-2 rounded-2xl border border-white/15 bg-zinc-900 pl-3 pr-1 py-1">
+          <textarea
+            ref={textareaRef}
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            placeholder="Nachricht an deinen Coach …"
+            onInput={onTextareaInput}
+            onKeyDown={onKeyDown}
+            placeholder={INPUT_PLACEHOLDER}
             disabled={loading}
-            className="min-w-0 flex-1 rounded-xl border border-white/15 bg-zinc-900 px-4 py-2.5 text-sm text-white placeholder:text-white/40 focus:border-white/40 focus:outline-none focus:ring-2 focus:ring-white/20 disabled:opacity-60"
+            rows={1}
+            className="min-h-[44px] max-h-[120px] w-0 min-w-0 flex-1 resize-none bg-transparent py-2.5 text-base text-white placeholder:text-white/40 focus:outline-none disabled:opacity-60"
+            style={{ fontSize: "16px" }}
+            aria-label={INPUT_PLACEHOLDER}
           />
           <button
             type="submit"
             disabled={!input.trim() || loading}
-            className="shrink-0 rounded-xl bg-white px-4 py-2.5 text-sm font-medium text-zinc-950 transition hover:bg-white/90 disabled:cursor-not-allowed disabled:opacity-50"
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-white/80 transition hover:bg-white/10 hover:text-white disabled:pointer-events-none disabled:opacity-40"
+            aria-label="Senden"
           >
-            Senden
+            <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
+            </svg>
           </button>
-        </div>
-      </form>
+        </form>
+      </div>
     </div>
   );
 }
