@@ -303,7 +303,6 @@ export default function ChatPage() {
             type="file"
             accept={allowedTypes}
             multiple
-            capture="environment"
             onChange={handleFileChange}
             className="hidden"
             aria-hidden
