@@ -84,6 +84,9 @@ export default function DashboardPage() {
   const [checkins, setCheckins] = useState<CheckinRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [reminderModalOpen, setReminderModalOpen] = useState(false);
+  const [reminderTime, setReminderTime] = useState("");
+  const [reminderSaving, setReminderSaving] = useState(false);
 
   useEffect(() => {
     Promise.all([
@@ -203,10 +206,84 @@ export default function DashboardPage() {
           </h1>
           <p className="mt-0.5 text-sm text-white/50">Dashboard</p>
         </div>
-        <Link href="/dashboard/wochenbericht" className="text-xs font-medium text-white/60 hover:text-white">
-          Wochenbericht →
-        </Link>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => {
+              setReminderModalOpen(true);
+              fetch("/api/profile")
+                .then((r) => (r.ok ? r.json() : null))
+                .then((d) => {
+                  const t = d?.data?.checkin_reminder_time;
+                  setReminderTime(t ? String(t).slice(0, 5) : "09:00");
+                })
+                .catch(() => setReminderTime("09:00"));
+            }}
+            className="rounded-lg border border-white/30 bg-white px-3 py-1.5 text-xs font-medium text-zinc-900 hover:bg-white/90"
+          >
+            Check-in planen
+          </button>
+          <Link
+            href="/checkin"
+            className={
+              todayCheckin
+                ? "rounded-lg border border-emerald-500/50 bg-emerald-500/20 px-3 py-1.5 text-xs font-medium text-emerald-300 hover:bg-emerald-500/30"
+                : "animate-pulse rounded-lg border border-amber-500/50 bg-amber-500/20 px-3 py-1.5 text-xs font-medium text-amber-300 hover:bg-amber-500/30"
+            }
+          >
+            {todayCheckin ? "Check-in ✓" : "Check-in ausstehend"}
+          </Link>
+          <Link href="/dashboard/wochenbericht" className="text-xs font-medium text-white/60 hover:text-white">
+            Wochenbericht →
+          </Link>
+        </div>
       </header>
+
+      {reminderModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onClick={() => !reminderSaving && setReminderModalOpen(false)}>
+          <div className="w-full max-w-sm rounded-xl border border-white/10 bg-zinc-900 p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-sm font-semibold text-white">Check-in planen</h3>
+            <p className="mt-1 text-xs text-white/50">Tägliche Erinnerung per E-Mail (Uhrzeit in UTC)</p>
+            <div className="mt-4">
+              <label className="block text-xs font-medium text-white/70">Uhrzeit</label>
+              <input
+                type="time"
+                value={reminderTime}
+                onChange={(e) => setReminderTime(e.target.value)}
+                className="mt-1 w-full rounded-lg border border-white/20 bg-white/5 px-3 py-2 text-sm text-white focus:border-white/40 focus:outline-none"
+              />
+            </div>
+            <div className="mt-5 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => !reminderSaving && setReminderModalOpen(false)}
+                className="rounded-lg px-3 py-1.5 text-xs font-medium text-white/60 hover:text-white"
+              >
+                Abbrechen
+              </button>
+              <button
+                type="button"
+                disabled={reminderSaving}
+                onClick={() => {
+                  setReminderSaving(true);
+                  fetch("/api/profile", {
+                    method: "PATCH",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ checkin_reminder_time: reminderTime || null }),
+                  })
+                    .then((r) => (r.ok ? Promise.resolve() : Promise.reject(new Error("Speichern fehlgeschlagen"))))
+                    .then(() => setReminderModalOpen(false))
+                    .catch((e) => setError(e.message))
+                    .finally(() => setReminderSaving(false));
+                }}
+                className="rounded-lg bg-white px-3 py-1.5 text-xs font-medium text-zinc-900 hover:bg-white/90 disabled:opacity-50"
+              >
+                {reminderSaving ? "Speichern …" : "Speichern"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {error && (
         <div className="mb-4 rounded-lg border border-amber-400/30 bg-amber-400/10 px-3 py-2 text-sm text-amber-200">
