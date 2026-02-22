@@ -77,15 +77,20 @@ export default function KalenderPage() {
 
   const handleSave = async (trained: boolean) => {
     if (!selectedDate || saving) return;
+    const dateOnly = selectedDate.slice(0, 10);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(dateOnly)) {
+      alert("Ungültiges Datum vom Kalender.");
+      return;
+    }
     setSaving(true);
     try {
       const res = await fetch("/api/calendar", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          date: selectedDate,
+          date: dateOnly,
           type: trained ? "training" : "ruhetag",
-          ...(recurringWeekday !== null && { recurringWeekday }),
+          ...(recurringWeekday !== null && recurringWeekday >= 0 && recurringWeekday <= 6 && { recurringWeekday }),
         }),
       });
       const data = await res.json();

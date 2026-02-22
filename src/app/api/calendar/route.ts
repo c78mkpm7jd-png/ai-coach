@@ -68,15 +68,35 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { date, type, recurringWeekday } = body as {
+    const { date: rawDate, type, recurringWeekday } = body as {
       date: string;
       type: "training" | "ruhetag";
       recurringWeekday?: number;
     };
 
-    if (!date || (type !== "training" && type !== "ruhetag")) {
+    if (!rawDate || typeof rawDate !== "string" || (type !== "training" && type !== "ruhetag")) {
       return NextResponse.json(
         { error: "date (YYYY-MM-DD) und type (training|ruhetag) erforderlich" },
+        { status: 400 }
+      );
+    }
+
+    const date = rawDate.slice(0, 10);
+    const dateMatch = /^(\d{4})-(\d{2})-(\d{2})$/.exec(date);
+    if (!dateMatch) {
+      return NextResponse.json(
+        { error: "date muss Format YYYY-MM-DD haben" },
+        { status: 400 }
+      );
+    }
+    const [, yStr, mStr, dStr] = dateMatch;
+    const y = parseInt(yStr!, 10);
+    const m = parseInt(mStr!, 10);
+    const day = parseInt(dStr!, 10);
+    const parsed = new Date(Date.UTC(y, m - 1, day));
+    if (parsed.getUTCFullYear() !== y || parsed.getUTCMonth() !== m - 1 || parsed.getUTCDate() !== day) {
+      return NextResponse.json(
+        { error: "Ungültiges Datum" },
         { status: 400 }
       );
     }
@@ -84,21 +104,17 @@ export async function POST(request: NextRequest) {
     const toUpsert: { date: string; type: "training" | "ruhetag" }[] = [];
 
     if (recurringWeekday != null && recurringWeekday >= 0 && recurringWeekday <= 6) {
-      const [y, m, d] = date.split("-").map(Number);
-      let current = new Date(Date.UTC(y, m - 1, d));
-      const currentWeekday = (current.getUTCDay() + 6) % 7;
-      let daysToAdd = (recurringWeekday - currentWeekday + 7) % 7;
-      if (daysToAdd === 0) daysToAdd = 7;
-      current.setUTCDate(current.getUTCDate() + daysToAdd);
-      for (let i = 0; i < 4; i++) {
+      toUpsert.push({ date, type });
+      let current = new Date(Date.UTC(y, m - 1, day));
+      for (let i = 0; i < 3; i++) {
+        current.setUTCDate(current.getUTCDate() + 7);
         toUpsert.push({
           date: current.toISOString().slice(0, 10),
           type,
         });
-        current.setUTCDate(current.getUTCDate() + 7);
       }
     } else {
-      toUpsert.push({ date: date.slice(0, 10), type });
+      toUpsert.push({ date, type });
     }
 
     for (const { date: d } of toUpsert) {
