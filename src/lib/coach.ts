@@ -446,13 +446,16 @@ export function formatStravaActivitiesForPrompt(activities: StravaActivity[]): s
   return `\n## Strava Aktivitäten des Nutzers (letzte 30 Tage – Workouts, Belastung, Fortschritt)\n${lines.join("\n")}\n`;
 }
 
-/** Lädt Strava-Aktivitäten (Token aus Supabase, ggf. erneuert) und gibt formatierten Block für den Coach-Kontext zurück. Leer-String wenn nicht verbunden oder keine Aktivitäten. */
+/** Lädt Strava-Aktivitäten (Token aus Supabase, ggf. erneuert) und gibt formatierten Block + Anzahl für den Coach-Kontext zurück. */
 export async function getStravaSummaryForCoach(
   supabase: SupabaseClient,
   userId: string
-): Promise<string> {
+): Promise<{ summary: string; count: number }> {
   const activities = await getStravaActivities(supabase, userId);
-  return formatStravaActivitiesForPrompt(activities);
+  return {
+    summary: formatStravaActivitiesForPrompt(activities),
+    count: activities.length,
+  };
 }
 
 /** Erzeugt die System-Prompt-Bausteine für den Chat (Dual-Mode + Analyse). */

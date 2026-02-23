@@ -49,18 +49,27 @@ export async function getValidStravaAccessToken(
     console.warn("[Strava] Profile load error:", error.message);
     return null;
   }
-  if (!profile) return null;
+  if (!profile) {
+    console.log("[Strava] No profile row for user");
+    return null;
+  }
   const p = profile as ProfileStrava;
-  if (!p.strava_connected || !p.strava_refresh_token) return null;
+  if (!p.strava_connected || !p.strava_refresh_token) {
+    console.log("[Strava] Not connected or missing refresh_token");
+    return null;
+  }
 
   const now = Math.floor(Date.now() / 1000);
   const expiry = p.strava_token_expiry ?? 0;
   const buffer = 300; // 5 Min vor Ablauf erneuern
+  const expiresIn = expiry - now;
 
   if (p.strava_access_token && expiry > now + buffer) {
+    console.log("[Strava] Using existing access token (expires in", expiresIn, "s)");
     return p.strava_access_token;
   }
 
+  console.log("[Strava] Refreshing token (expired or expiring in", expiresIn, "s)");
   const res = await fetch(STRAVA_TOKEN_URL, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -72,18 +81,21 @@ export async function getValidStravaAccessToken(
     }),
   });
 
+  const refreshBody = await res.text();
   if (!res.ok) {
-    console.warn("Strava token refresh failed:", await res.text());
+    console.warn("[Strava] Token refresh failed:", res.status, refreshBody.slice(0, 200));
     return null;
   }
 
-  const data = (await res.json()) as {
-    access_token: string;
-    refresh_token?: string;
-    expires_at: number;
-  };
+  let data: { access_token: string; refresh_token?: string; expires_at: number };
+  try {
+    data = JSON.parse(refreshBody) as typeof data;
+  } catch {
+    console.warn("[Strava] Token refresh response not JSON");
+    return null;
+  }
 
-  await supabase
+  const { error: updateError } = await supabase
     .from("profiles")
     .update({
       strava_access_token: data.access_token,
@@ -92,6 +104,11 @@ export async function getValidStravaAccessToken(
     })
     .eq("id", userId);
 
+  if (updateError) {
+    console.warn("[Strava] Token refreshed but Supabase update failed:", updateError.message);
+    return data.access_token;
+  }
+  console.log("[Strava] Token refreshed and saved, new expires_at:", data.expires_at);
   return data.access_token;
 }
 
@@ -124,7 +141,9 @@ export async function getStravaActivities(
     return [];
   }
   const list = Array.isArray(raw) ? raw : [];
-  if (list.length === 0) {
+  if (list.length > 0) {
+    console.log("[Strava] Activities loaded:", list.length, "Aktivitäten");
+  } else {
     console.log("[Strava] No activities in last 30 days (or empty response)");
   }
   return list;

@@ -203,6 +203,9 @@ export async function POST(request: NextRequest) {
     const checkins = (checkinsRes.data ?? []) as CheckinRow[];
     const existingMessages = (messagesRes.data ?? []) as { role: string; content: string }[];
 
+    const stravaConnected = !!profile?.strava_connected;
+    console.log("[Chat] Strava connected:", stravaConnected);
+
     const openai = new OpenAI({ apiKey: openaiKey });
 
     // Zuerst Extraktion und Speichern, damit der Coach in derselben Antwort darauf zugreifen kann
@@ -335,9 +338,11 @@ Jede Erwähnung von Plan/Übungen/Split als "trainingsplan" speichern. Maximal $
       .join("\n");
 
     let stravaSummary = "";
-    if (profile?.strava_connected) {
+    if (stravaConnected) {
       try {
-        stravaSummary = await getStravaSummaryForCoach(supabaseAdmin, userId);
+        const stravaResult = await getStravaSummaryForCoach(supabaseAdmin, userId);
+        stravaSummary = stravaResult.summary;
+        console.log("[Chat] Strava activities loaded:", stravaResult.count, "Aktivitäten");
       } catch (e) {
         console.warn("[Chat] Strava summary for coach failed:", e);
       }
@@ -350,6 +355,10 @@ Jede Erwähnung von Plan/Übungen/Split als "trainingsplan" speichern. Maximal $
       coachMemories,
       stravaSummary
     );
+
+    if (stravaSummary) {
+      console.log("[Chat] Strava data inserted into system prompt, length:", stravaSummary.length, "chars");
+    }
 
     const systemPrompt = `Du bist der persönliche AI Fitness Coach. Du arbeitest mit einem klaren Entscheidungs- und Prioritätssystem.
 
