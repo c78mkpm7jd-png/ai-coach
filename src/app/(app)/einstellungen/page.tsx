@@ -28,8 +28,10 @@ export default function EinstellungenPage() {
   useEffect(() => {
     const status = searchParams.get("strava");
     if (status === "connected") setStravaConnected(true);
-    if (status === "denied" || status === "error") setStravaConnected(false);
+    if (status === "denied" || status === "error" || status === "no_profile") setStravaConnected(false);
   }, [searchParams]);
+
+  const stravaNoProfile = searchParams.get("strava") === "no_profile";
 
   async function handleDisconnect() {
     setDisconnecting(true);
@@ -67,6 +69,11 @@ export default function EinstellungenPage() {
 
       <section className="mt-10 rounded-2xl border border-white/10 bg-white/5 p-6">
         <h2 className="text-lg font-semibold text-white/90">Strava</h2>
+        {stravaNoProfile && (
+          <p className="mt-2 rounded-lg bg-amber-500/20 px-3 py-2 text-sm text-amber-200">
+            Bitte zuerst das Onboarding abschließen, bevor du Strava verbindest.
+          </p>
+        )}
         <p className="mt-1 text-sm text-white/60">
           Verbinde dein Strava-Konto, damit der Coach deine Aktivitäten (Laufen, Radfahren, etc.) kennt und in Analysen einbeziehen kann.
         </p>

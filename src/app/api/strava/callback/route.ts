@@ -85,22 +85,35 @@ export async function GET(request: NextRequest) {
     }
 
     const userId = state;
-    const payload = {
-      id: userId,
-      strava_access_token: data.access_token,
-      strava_refresh_token: data.refresh_token,
-      strava_token_expiry: data.expires_at,
-      strava_connected: true,
-      updated_at: new Date().toISOString(),
-    };
 
-    const { data: upsertData, error: updateError } = await supabaseAdmin
+    const { data: existingProfile, error: selectError } = await supabaseAdmin
       .from("profiles")
-      .upsert(payload, { onConflict: "id" })
-      .select("id, strava_connected");
+      .select("id")
+      .eq("id", userId)
+      .maybeSingle();
+
+    if (selectError) {
+      console.error("[Strava callback] Profile select failed:", selectError);
+      return redirectToEinstellungen(origin, "strava=error");
+    }
+
+    if (!existingProfile) {
+      console.warn("[Strava callback] No profile found for user:", userId.slice(0, 8) + "...");
+      return redirectToEinstellungen(origin, "strava=no_profile");
+    }
+
+    const { error: updateError } = await supabaseAdmin
+      .from("profiles")
+      .update({
+        strava_access_token: data.access_token,
+        strava_refresh_token: data.refresh_token,
+        strava_token_expiry: data.expires_at,
+        strava_connected: true,
+      })
+      .eq("id", userId);
 
     if (updateError) {
-      console.error("[Strava callback] Supabase upsert failed:", {
+      console.error("[Strava callback] Supabase update failed:", {
         message: updateError.message,
         code: updateError.code,
         details: updateError.details,
@@ -108,10 +121,7 @@ export async function GET(request: NextRequest) {
       return redirectToEinstellungen(origin, "strava=error");
     }
 
-    console.log("[Strava callback] Success:", {
-      userId: userId.slice(0, 8) + "...",
-      strava_connected: upsertData?.[0]?.strava_connected ?? true,
-    });
+    console.log("[Strava callback] Success:", { userId: userId.slice(0, 8) + "..." });
 
     return redirectToEinstellungen(origin, "strava=connected");
   } catch (err) {
