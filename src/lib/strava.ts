@@ -113,7 +113,7 @@ export async function getValidStravaAccessToken(
   return data.access_token;
 }
 
-/** Lädt Aktivitäten der letzten 30 Tage, Token wird bei Bedarf erneuert. */
+/** Lädt Aktivitäten (ohne Zeitfilter für Test, per_page=10). Token wird bei Bedarf erneuert. */
 export async function getStravaActivities(
   supabase: SupabaseClient,
   userId: string
@@ -122,8 +122,8 @@ export async function getStravaActivities(
   console.log("[Strava] Strava token loaded:", accessToken ? "ja" : "nein");
   if (!accessToken) return [];
 
-  const after = Math.floor(Date.now() / 1000) - 30 * 24 * 60 * 60;
-  const url = `${STRAVA_ACTIVITIES_URL}?after=${after}&per_page=100`;
+  const url = `${STRAVA_ACTIVITIES_URL}?per_page=10`;
+  console.log("[Strava] Strava API URL:", url);
 
   const res = await fetch(url, {
     headers: { Authorization: `Bearer ${accessToken}` },
@@ -131,9 +131,10 @@ export async function getStravaActivities(
 
   const bodyText = await res.text();
   console.log("[Strava] Strava API response status:", res.status);
+  console.log("[Strava] Strava API response body (full):", bodyText);
 
   if (!res.ok) {
-    console.warn("[Strava] Activities fetch failed:", res.status, bodyText.slice(0, 200), res.status === 401 ? "(401 = Token abgelaufen oder ungültig)" : "");
+    console.warn("[Strava] Activities fetch failed:", res.status, res.status === 401 ? "(401 = Token abgelaufen oder ungültig)" : "");
     return [];
   }
 
@@ -147,7 +148,7 @@ export async function getStravaActivities(
   const list = Array.isArray(raw) ? raw : [];
   console.log("[Strava] Strava activities count:", list.length);
   if (list.length === 0) {
-    console.log("[Strava] Activities array is empty (keine Aktivitäten in den letzten 30 Tagen oder leere API-Antwort)");
+    console.log("[Strava] Activities array is empty");
   }
   return list;
 }
