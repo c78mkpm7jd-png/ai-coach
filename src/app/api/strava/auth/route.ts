@@ -12,6 +12,7 @@ export async function GET(request: NextRequest) {
     }
 
     const clientId = process.env.STRAVA_CLIENT_ID;
+    console.log("Using Strava Client ID:", clientId ?? "(nicht gesetzt)");
     if (!clientId) {
       return NextResponse.json(
         { error: "Strava ist nicht konfiguriert (STRAVA_CLIENT_ID fehlt)" },
