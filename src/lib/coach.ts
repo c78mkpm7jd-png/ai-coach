@@ -4,7 +4,7 @@
  */
 
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { StravaActivity } from "@/lib/strava";
+import { getStravaActivities, type StravaActivity } from "@/lib/strava";
 
 export type Goal = "cut" | "lean-bulk" | "recomp" | "maintain";
 
@@ -443,7 +443,16 @@ export function formatStravaActivitiesForPrompt(activities: StravaActivity[]): s
     const parts = [date, a.type, a.name, `${min} min`, `${km} km`, a.total_elevation_gain ? `${Math.round(a.total_elevation_gain)} m ↑` : "", hr, kcal].filter(Boolean);
     return `- ${parts.join(" · ")}`;
   });
-  return `\n## Strava (letzte 30 Tage – nutze für Trainingsmuster, Belastung, Fortschritt)\n${lines.join("\n")}\n`;
+  return `\n## Strava Aktivitäten des Nutzers (letzte 30 Tage – Workouts, Belastung, Fortschritt)\n${lines.join("\n")}\n`;
+}
+
+/** Lädt Strava-Aktivitäten (Token aus Supabase, ggf. erneuert) und gibt formatierten Block für den Coach-Kontext zurück. Leer-String wenn nicht verbunden oder keine Aktivitäten. */
+export async function getStravaSummaryForCoach(
+  supabase: SupabaseClient,
+  userId: string
+): Promise<string> {
+  const activities = await getStravaActivities(supabase, userId);
+  return formatStravaActivitiesForPrompt(activities);
 }
 
 /** Erzeugt die System-Prompt-Bausteine für den Chat (Dual-Mode + Analyse). */

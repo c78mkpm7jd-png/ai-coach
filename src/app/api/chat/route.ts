@@ -8,13 +8,12 @@ import {
   analyzeSignals,
   buildChatCoachContextBlock,
   getCoachMemories,
-  formatStravaActivitiesForPrompt,
+  getStravaSummaryForCoach,
   estimateTdee,
   getTargetCaloriesFromTdee,
   getMacrosSimple,
   type CheckinRow as CoachCheckinRow,
 } from "@/lib/coach";
-import { getStravaActivities } from "@/lib/strava";
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const supabaseServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
@@ -338,10 +337,9 @@ Jede Erwähnung von Plan/Übungen/Split als "trainingsplan" speichern. Maximal $
     let stravaSummary = "";
     if (profile?.strava_connected) {
       try {
-        const stravaActivities = await getStravaActivities(supabaseAdmin, userId);
-        stravaSummary = formatStravaActivitiesForPrompt(stravaActivities);
+        stravaSummary = await getStravaSummaryForCoach(supabaseAdmin, userId);
       } catch (e) {
-        console.warn("Strava activities for coach:", e);
+        console.warn("[Chat] Strava summary for coach failed:", e);
       }
     }
 
@@ -380,7 +378,7 @@ Wenn die Nachricht emotional beginnt aber Daten enthält: Zuerst Emotion validie
 - **Gym-Ausstattung:** Wenn im Gedächtnis Ausstattung/Geräte stehen (z. B. "Hat keinen Kabelzug", "Gym hat X"): Empfehle nur Übungen, die mit dieser Ausstattung machbar sind. Erwähne keine Geräte, die der Nutzer nicht hat.
 - **Trainingsplan (Bild/PDF/Text):** Bei angehängtem oder beschriebenem Plan: Analysiere Übungen, Muskeln, Struktur (z. B. Push/Pull/Legs) und gib kurze Verbesserungsvorschläge. Wenn du gerade einen Plan verarbeitet hast: Bestätige zuerst "Ich habe deinen Plan gespeichert" und beziehe dich aktiv darauf (z. B. "Laut deinem Plan trainierst du Montag Pull …").
 - **Gedächtnis:** Alle Infos im Abschnitt "Gedächtnis" sind bereits gespeichert. Beziehe dich darauf; frage NIEMALS erneut nach Dingen, die dort stehen (z. B. nicht "Welchen Split machst du?" wenn der Split im Gedächtnis steht).
-- **Strava:** Wenn ein Abschnitt "Strava" mit Aktivitäten vorhanden ist: Nutze diese für Trainingsmuster, Belastung und Fortschritt (z. B. "Laut Strava hast du diese Woche …", "Dein Laufpensum …").
+- **Strava Aktivitäten des Nutzers:** Wenn im Kontext-Block unten ein Abschnitt "Strava Aktivitäten des Nutzers" steht: Beziehe dich darauf (Trainingsmuster, Belastung, Fortschritt). z. B. "Laut Strava hast du diese Woche …", "Dein Laufpensum …".
 
 ${coachContextBlock}
 

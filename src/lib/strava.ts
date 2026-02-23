@@ -43,9 +43,13 @@ export async function getValidStravaAccessToken(
     .from("profiles")
     .select("strava_access_token, strava_refresh_token, strava_token_expiry, strava_connected")
     .eq("id", userId)
-    .single();
+    .maybeSingle();
 
-  if (error || !profile) return null;
+  if (error) {
+    console.warn("[Strava] Profile load error:", error.message);
+    return null;
+  }
+  if (!profile) return null;
   const p = profile as ProfileStrava;
   if (!p.strava_connected || !p.strava_refresh_token) return null;
 
@@ -106,11 +110,22 @@ export async function getStravaActivities(
     headers: { Authorization: `Bearer ${accessToken}` },
   });
 
+  const bodyText = await res.text();
   if (!res.ok) {
-    console.warn("Strava activities fetch failed:", res.status, await res.text());
+    console.warn("[Strava] Activities fetch failed:", res.status, bodyText.slice(0, 200));
     return [];
   }
 
-  const raw = (await res.json()) as StravaActivity[];
-  return Array.isArray(raw) ? raw : [];
+  let raw: StravaActivity[];
+  try {
+    raw = JSON.parse(bodyText) as StravaActivity[];
+  } catch {
+    console.warn("[Strava] Activities response not JSON");
+    return [];
+  }
+  const list = Array.isArray(raw) ? raw : [];
+  if (list.length === 0) {
+    console.log("[Strava] No activities in last 30 days (or empty response)");
+  }
+  return list;
 }

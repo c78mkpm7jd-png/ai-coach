@@ -1,3 +1,10 @@
+/**
+ * GET /api/strava/activities
+ * - Lädt Strava Access Token aus Supabase (profiles.strava_access_token)
+ * - Erneuert Token automatisch wenn abgelaufen (über getStravaActivities → getValidStravaAccessToken)
+ * - Holt Aktivitäten der letzten 30 Tage: GET https://www.strava.com/api/v3/athlete/activities
+ * - Rückgabe: Datum, Typ, Dauer, Distanz, Herzfrequenz, Kalorien
+ */
 import { NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { createClient } from "@supabase/supabase-js";
@@ -41,7 +48,7 @@ function toResponse(a: StravaActivity): StravaActivityResponse {
   };
 }
 
-/** GET: Aktivitäten der letzten 30 Tage. Token wird bei Bedarf erneuert. */
+/** GET: Aktivitäten der letzten 30 Tage. Token aus Supabase, bei Ablauf automatisch erneuert. */
 export async function GET() {
   try {
     const { userId } = await auth();
@@ -52,9 +59,13 @@ export async function GET() {
     const activities = await getStravaActivities(supabaseAdmin, userId);
     const data = activities.map(toResponse);
 
+    if (data.length === 0) {
+      console.log("[Strava activities] 0 activities for user (nicht verbunden oder keine Aktivitäten)");
+    }
+
     return NextResponse.json({ data }, { status: 200 });
   } catch (err) {
-    console.error("Strava activities:", err);
+    console.error("[Strava activities] Error:", err);
     return NextResponse.json(
       { error: "Aktivitäten konnten nicht geladen werden" },
       { status: 500 }
