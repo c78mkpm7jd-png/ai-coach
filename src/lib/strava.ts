@@ -63,13 +63,14 @@ export async function getValidStravaAccessToken(
   const expiry = p.strava_token_expiry ?? 0;
   const buffer = 300; // 5 Min vor Ablauf erneuern
   const expiresIn = expiry - now;
+  const isExpiredOrExpiring = !p.strava_access_token || expiry <= now + buffer;
 
   if (p.strava_access_token && expiry > now + buffer) {
     console.log("[Strava] Using existing access token (expires in", expiresIn, "s)");
     return p.strava_access_token;
   }
 
-  console.log("[Strava] Refreshing token (expired or expiring in", expiresIn, "s)");
+  console.log("[Strava] Token refresh nötig: strava_token_expiry < jetzt + 5min?", isExpiredOrExpiring, "| expiry:", expiry, "| now:", now, "| expiresIn:", expiresIn, "s");
   const res = await fetch(STRAVA_TOKEN_URL, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -105,10 +106,10 @@ export async function getValidStravaAccessToken(
     .eq("id", userId);
 
   if (updateError) {
-    console.warn("[Strava] Token refreshed but Supabase update failed:", updateError.message);
+    console.warn("[Strava] Token refreshed but Supabase update failed:", updateError.message, "| Neuer Token wird trotzdem genutzt.");
     return data.access_token;
   }
-  console.log("[Strava] Token refreshed and saved, new expires_at:", data.expires_at);
+  console.log("[Strava] Token refreshed and saved to Supabase, new strava_token_expiry:", data.expires_at);
   return data.access_token;
 }
 
@@ -118,6 +119,7 @@ export async function getStravaActivities(
   userId: string
 ): Promise<StravaActivity[]> {
   const accessToken = await getValidStravaAccessToken(supabase, userId);
+  console.log("[Strava] Strava token loaded:", accessToken ? "ja" : "nein");
   if (!accessToken) return [];
 
   const after = Math.floor(Date.now() / 1000) - 30 * 24 * 60 * 60;
@@ -128,8 +130,10 @@ export async function getStravaActivities(
   });
 
   const bodyText = await res.text();
+  console.log("[Strava] Strava API response status:", res.status);
+
   if (!res.ok) {
-    console.warn("[Strava] Activities fetch failed:", res.status, bodyText.slice(0, 200));
+    console.warn("[Strava] Activities fetch failed:", res.status, bodyText.slice(0, 200), res.status === 401 ? "(401 = Token abgelaufen oder ungültig)" : "");
     return [];
   }
 
@@ -141,10 +145,9 @@ export async function getStravaActivities(
     return [];
   }
   const list = Array.isArray(raw) ? raw : [];
-  if (list.length > 0) {
-    console.log("[Strava] Activities loaded:", list.length, "Aktivitäten");
-  } else {
-    console.log("[Strava] No activities in last 30 days (or empty response)");
+  console.log("[Strava] Strava activities count:", list.length);
+  if (list.length === 0) {
+    console.log("[Strava] Activities array is empty (keine Aktivitäten in den letzten 30 Tagen oder leere API-Antwort)");
   }
   return list;
 }
