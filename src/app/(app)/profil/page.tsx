@@ -94,6 +94,8 @@ export default function ProfilPage() {
   const [fatTargetMax, setFatTargetMax] = useState("");
   const [targetsSaving, setTargetsSaving] = useState(false);
   const [targetsSaved, setTargetsSaved] = useState(false);
+  const [targetsCalculating, setTargetsCalculating] = useState(false);
+  const [targetsExplanation, setTargetsExplanation] = useState<string | null>(null);
 
   function loadCheckins() {
     if (!user) return;
@@ -166,6 +168,41 @@ export default function ProfilPage() {
       alert(err instanceof Error ? err.message : "Fehler beim Speichern.");
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function handleCalculateTargets() {
+    if (!goal || !weight || !height || !age) {
+      alert("Bitte zuerst Ziel und Körperdaten (Alter, Größe, Gewicht) ausfüllen und speichern.");
+      return;
+    }
+    setTargetsCalculating(true);
+    setTargetsExplanation(null);
+    try {
+      const params = new URLSearchParams({
+        goal,
+        weight,
+        height,
+        age,
+        gender: gender || "m",
+        activity_level: activity || "sitzend",
+      });
+      const res = await fetch(`/api/onboarding/calorie-target?${params}`);
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Berechnung fehlgeschlagen");
+      setCalorieTargetMin(String(data.calorie_target_min));
+      setCalorieTargetMax(String(data.calorie_target_max));
+      setProteinTargetMin(String(data.protein_target_min));
+      setProteinTargetMax(String(data.protein_target_max));
+      if (data.carbs_target_min != null) setCarbsTargetMin(String(data.carbs_target_min));
+      if (data.carbs_target_max != null) setCarbsTargetMax(String(data.carbs_target_max));
+      if (data.fat_target_min != null) setFatTargetMin(String(data.fat_target_min));
+      if (data.fat_target_max != null) setFatTargetMax(String(data.fat_target_max));
+      setTargetsExplanation(data.explanation ?? null);
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "Berechnung fehlgeschlagen");
+    } finally {
+      setTargetsCalculating(false);
     }
   }
 
@@ -506,6 +543,21 @@ export default function ProfilPage() {
             </button>
             {targetsSaved && (
               <span className="text-sm text-emerald-400">Gespeichert.</span>
+            )}
+          </div>
+          <div className="pt-2 border-t border-white/5 mt-4">
+            <button
+              type="button"
+              onClick={handleCalculateTargets}
+              disabled={targetsCalculating || !goal || !weight || !height || !age}
+              className="text-sm text-white/50 hover:text-white/70 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {targetsCalculating ? "Wird berechnet …" : "Werte berechnen lassen"}
+            </button>
+            {targetsExplanation && (
+              <p className="mt-2 text-xs leading-relaxed text-white/45">
+                {targetsExplanation}
+              </p>
             )}
           </div>
         </form>

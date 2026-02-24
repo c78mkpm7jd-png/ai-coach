@@ -32,7 +32,7 @@ export function getTargetCaloriesFromTdee(tdee: number, goal: string): number {
   }
 }
 
-/** Berechnet Kalorien- und Protein-Zielbereich aus Profildaten (für Onboarding & bestehende Nutzer). */
+/** Berechnet Kalorien-, Protein-, Carbs- und Fett-Zielbereich aus Profildaten (Onboarding, Profil, bestehende Nutzer). */
 export function getTargetRangeFromProfile(params: {
   weightKg: number;
   heightCm: number;
@@ -45,6 +45,10 @@ export function getTargetRangeFromProfile(params: {
   calorie_target_max: number;
   protein_target_min: number;
   protein_target_max: number;
+  carbs_target_min: number;
+  carbs_target_max: number;
+  fat_target_min: number;
+  fat_target_max: number;
   explanation: string;
 } {
   const tdee = estimateTdee(
@@ -73,6 +77,15 @@ export function getTargetRangeFromProfile(params: {
   }
   const proteinMin = Math.round(params.weightKg * 1.8);
   const proteinMax = Math.round(params.weightKg * 2.2);
+  const calMid = (calMin + calMax) / 2;
+  const fatMin = Math.round((calMid * 0.25) / 9);
+  const fatMax = Math.round((calMid * 0.3) / 9);
+  const proteinMid = (proteinMin + proteinMax) / 2;
+  const fatMid = (fatMin + fatMax) / 2;
+  const carbKcal = calMid - proteinMid * 4 - fatMid * 9;
+  const carbsMid = Math.round(carbKcal / 4);
+  const carbsMin = Math.max(0, carbsMid - 25);
+  const carbsMax = carbsMid + 25;
   const goalLabels: Record<string, string> = {
     cut: "Cut (Fett reduzieren)",
     "lean-bulk": "Lean Bulk (Masse aufbauen)",
@@ -80,12 +93,16 @@ export function getTargetRangeFromProfile(params: {
     maintain: "Maintain",
   };
   const goalLabel = goalLabels[params.goal] ?? params.goal;
-  const explanation = `Basierend auf deinem Grundumsatz (BMR), Aktivitätslevel und Ziel „${goalLabel}“: TDEE ca. ${tdee} kcal. Kalorienziel ${calMin}–${calMax} kcal, Protein ${proteinMin}–${proteinMax} g (1,8–2,2 g/kg).`;
+  const explanation = `Basiert auf BMR, Aktivitätslevel und Ziel „${goalLabel}“. TDEE ca. ${tdee} kcal → Kalorien ${calMin}–${calMax} kcal (±100 um Ziel). Protein ${proteinMin}–${proteinMax} g (1,8–2,2 g/kg). Fett 25–30 % der Kalorien: ${fatMin}–${fatMax} g. Carbs: Rest → ${carbsMin}–${carbsMax} g.`;
   return {
     calorie_target_min: calMin,
     calorie_target_max: calMax,
     protein_target_min: proteinMin,
     protein_target_max: proteinMax,
+    carbs_target_min: carbsMin,
+    carbs_target_max: carbsMax,
+    fat_target_min: fatMin,
+    fat_target_max: fatMax,
     explanation,
   };
 }

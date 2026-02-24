@@ -60,6 +60,10 @@ export default function OnboardingKalorienzielPage() {
       setCalMax(String(data.calorie_target_max));
       setProteinMin(String(data.protein_target_min));
       setProteinMax(String(data.protein_target_max));
+      if (data.carbs_target_min != null) setCarbsMin(String(data.carbs_target_min));
+      if (data.carbs_target_max != null) setCarbsMax(String(data.carbs_target_max));
+      if (data.fat_target_min != null) setFatMin(String(data.fat_target_min));
+      if (data.fat_target_max != null) setFatMax(String(data.fat_target_max));
       setExplanation(data.explanation ?? null);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Berechnung fehlgeschlagen");
