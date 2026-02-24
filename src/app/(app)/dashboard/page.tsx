@@ -172,7 +172,7 @@ export default function DashboardPage() {
   const currentWeight = lastWithWeight.length ? lastWithWeight[lastWithWeight.length - 1].weight_kg : null;
   const weightTrend =
     lastWithWeight.length >= 2
-      ? lastWithWeight[lastWithWeight.length - 1].weight_kg - lastWithWeight[lastWithWeight.length - 2].weight_kg
+      ? (lastWithWeight[lastWithWeight.length - 1].weight_kg ?? 0) - (lastWithWeight[lastWithWeight.length - 2].weight_kg ?? 0)
       : null;
 
   const calendarDays = useMemo(() => {
