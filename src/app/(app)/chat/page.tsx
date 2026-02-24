@@ -51,13 +51,42 @@ export default function ChatPage() {
   const maxFileSize = maxFileSizeMb * 1024 * 1024;
 
   useEffect(() => {
-    fetch("/api/chat")
-      .then((res) => res.json())
-      .then((data) => {
-        if (data.messages) setMessages(data.messages);
-      })
-      .catch(() => {})
-      .finally(() => setLoadingHistory(false));
+    const loadChatAndCheckin = async () => {
+      try {
+        const [chatRes, checkinRes] = await Promise.all([
+          fetch("/api/chat"),
+          fetch("/api/checkin-chat"),
+        ]);
+        const chatData = chatRes.ok ? await chatRes.json() : {};
+        const checkinData = checkinRes.ok ? await checkinRes.json() : {};
+        const history: ChatMessage[] = chatData.messages ?? [];
+        const suggestedMessage: string | null = checkinData.suggestedMessage ?? null;
+
+        if (suggestedMessage?.trim()) {
+          const checkinPrompt: ChatMessage = {
+            id: "checkin-prompt",
+            role: "assistant",
+            content: suggestedMessage.trim(),
+            created_at: new Date().toISOString(),
+          };
+          setMessages([checkinPrompt, ...history]);
+        } else {
+          setMessages(history);
+        }
+      } catch {
+        // Fallback: nur Chat-Historie versuchen
+        try {
+          const res = await fetch("/api/chat");
+          const data = await res.json();
+          if (data.messages) setMessages(data.messages);
+        } catch {
+          // leer lassen
+        }
+      } finally {
+        setLoadingHistory(false);
+      }
+    };
+    loadChatAndCheckin();
   }, []);
 
   useEffect(() => {
