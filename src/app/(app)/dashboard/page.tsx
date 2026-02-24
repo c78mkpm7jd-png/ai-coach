@@ -360,7 +360,10 @@ export default function DashboardPage() {
                   <CartesianGrid strokeDasharray="2 2" stroke="rgba(255,255,255,0.06)" />
                   <XAxis dataKey="day" tick={{ fontSize: 9, fill: "rgba(255,255,255,0.6)" }} stroke="rgba(255,255,255,0.15)" />
                   <YAxis tick={{ fontSize: 9, fill: "rgba(255,255,255,0.6)" }} stroke="rgba(255,255,255,0.15)" tickFormatter={(v: number | undefined) => (v != null && v > 0 ? `${v}` : "–")} width={28} />
-                  <Tooltip contentStyle={{ background: "#18181b", border: "1px solid rgba(255,255,255,0.1)" }} formatter={(v: number | null | undefined, n: string | undefined) => [v != null && v > 0 ? `${v} kcal` : "–", n ?? ""]} />
+                  <Tooltip contentStyle={{ background: "#18181b", border: "1px solid rgba(255,255,255,0.1)" }} formatter={(v: unknown, n: string | undefined) => {
+                    const val = typeof v === "number" ? v : null;
+                    return [val != null && val > 0 ? `${val} kcal` : "–", n ?? ""];
+                  }} />
                   <Line type="monotone" dataKey="Verbrauch" stroke={COLORS.burned} strokeWidth={1.5} dot={false} connectNulls />
                   <Line type="monotone" dataKey="Aufnahme" stroke={COLORS.intake} strokeWidth={1.5} dot={false} connectNulls />
                 </LineChart>
@@ -382,7 +385,10 @@ export default function DashboardPage() {
                   <CartesianGrid strokeDasharray="2 2" stroke="rgba(255,255,255,0.06)" />
                   <XAxis dataKey="day" tick={{ fontSize: 9, fill: "rgba(255,255,255,0.6)" }} stroke="rgba(255,255,255,0.15)" />
                   <YAxis tick={{ fontSize: 9, fill: "rgba(255,255,255,0.6)" }} stroke="rgba(255,255,255,0.15)" width={28} tickFormatter={(v: number | undefined) => (v != null && v > 0 ? `${v}` : "–")} />
-                  <Tooltip contentStyle={{ background: "#18181b", border: "1px solid rgba(255,255,255,0.1)" }} formatter={(v: number | null | undefined, n: string | undefined) => [v != null && v > 0 ? `${v} g` : "–", n ?? ""]} />
+                  <Tooltip contentStyle={{ background: "#18181b", border: "1px solid rgba(255,255,255,0.1)" }} formatter={(v: unknown, n: string | undefined) => {
+                    const val = typeof v === "number" ? v : null;
+                    return [val != null && val > 0 ? `${val} g` : "–", n ?? ""];
+                  }} />
                   <Line type="monotone" dataKey="Protein" stroke={COLORS.protein} strokeWidth={1.5} dot={false} connectNulls />
                   <Line type="monotone" dataKey="Carbs" stroke={COLORS.carbs} strokeWidth={1.5} dot={false} connectNulls />
                   <Line type="monotone" dataKey="Fett" stroke={COLORS.fat} strokeWidth={1.5} dot={false} connectNulls />
@@ -415,7 +421,10 @@ export default function DashboardPage() {
                   <CartesianGrid strokeDasharray="2 2" stroke="rgba(255,255,255,0.06)" />
                   <XAxis dataKey="day" tick={{ fontSize: 9, fill: "rgba(255,255,255,0.6)" }} stroke="rgba(255,255,255,0.15)" />
                   <YAxis tick={{ fontSize: 9, fill: "rgba(255,255,255,0.6)" }} stroke="rgba(255,255,255,0.15)" width={28} tickFormatter={(v: number | undefined) => (v != null && v > 0 ? `${v}` : "–")} />
-                  <Tooltip contentStyle={{ background: "#18181b", border: "1px solid rgba(255,255,255,0.1)" }} formatter={(v: number | null | undefined, n: string | undefined) => [v != null && v > 0 ? `${v} kg` : "–", n ?? ""]} />
+                  <Tooltip contentStyle={{ background: "#18181b", border: "1px solid rgba(255,255,255,0.1)" }} formatter={(v: unknown, n: string | undefined) => {
+                    const val = typeof v === "number" ? v : null;
+                    return [val != null && val > 0 ? `${val} kg` : "–", n ?? ""];
+                  }} />
                   <Line type="monotone" dataKey="kg" stroke="#a78bfa" strokeWidth={1.5} dot={false} connectNulls />
                 </LineChart>
               </ResponsiveContainer>
