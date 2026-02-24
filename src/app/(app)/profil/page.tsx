@@ -4,6 +4,7 @@ import { useState, useEffect, FormEvent } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useUser } from "@clerk/nextjs";
+import { isCheckinComplete } from "@/lib/checkin-partial";
 
 const GOALS = [
   { id: "lean-bulk", label: "Lean Bulk", description: "Sauber Muskelmasse aufbauen mit minimalem Fettzuwachs." },
@@ -42,10 +43,10 @@ type Profile = {
 type Checkin = {
   id: string;
   created_at: string;
-  weight_kg: number;
-  hunger_level: number;
-  energy_level: number;
-  trained: boolean;
+  weight_kg?: number | null;
+  hunger_level?: number | null;
+  energy_level?: number | null;
+  trained?: boolean | null;
   activity_type?: string | null;
   activity_duration_min?: number | null;
   activity_calories_burned?: number | null;
@@ -510,16 +511,18 @@ export default function ProfilPage() {
         </form>
       </section>
 
-      {/* Meine Check-ins */}
+      {/* Meine Check-ins – nur vollständige (alle Pflichtfelder) */}
       <section className="mt-12 border-t border-white/10 pt-10">
         <h2 className="text-lg font-semibold text-white/90 mb-4">Meine Check-ins</h2>
         {checkinsLoading ? (
           <p className="text-sm text-white/50">Lade Check-ins …</p>
-        ) : checkins.length === 0 ? (
-          <p className="text-sm text-white/50">Noch keine Check-ins.</p>
-        ) : (
+        ) : (() => {
+          const completeCheckins = checkins.filter((c) => isCheckinComplete(c));
+          return completeCheckins.length === 0 ? (
+            <p className="text-sm text-white/50">Noch keine vollständigen Check-ins.</p>
+          ) : (
           <ul className="space-y-3">
-            {checkins.map((c) => {
+            {completeCheckins.map((c) => {
               const dateStr = c.created_at.slice(0, 10);
               const isDeleting = deletingDate === dateStr;
               return (
@@ -529,10 +532,10 @@ export default function ProfilPage() {
                 >
                   <div className="flex flex-wrap items-center gap-4 text-sm">
                     <span className="text-white/90 font-medium">{formatCheckinDate(c.created_at)}</span>
-                    <span className="text-white/70">{c.weight_kg} kg</span>
-                    <span className="text-white/70">Hunger: {c.hunger_level}/5</span>
-                    <span className="text-white/70">Energie: {c.energy_level}/5</span>
-                    <span className="text-white/70">Training: {c.trained ? "Ja" : "Nein"}</span>
+                    <span className="text-white/70">{c.weight_kg != null ? `${c.weight_kg} kg` : "–"}</span>
+                    <span className="text-white/70">Hunger: {c.hunger_level != null ? `${c.hunger_level}/5` : "–"}</span>
+                    <span className="text-white/70">Energie: {c.energy_level != null ? `${c.energy_level}/5` : "–"}</span>
+                    <span className="text-white/70">Training: {c.trained != null ? (c.trained ? "Ja" : "Nein") : "–"}</span>
                     {c.activity_type && c.activity_type !== "ruhetag" && (
                       <>
                         <span className="text-white/70">{ACTIVITY_LABELS[c.activity_type] ?? c.activity_type}</span>
@@ -561,7 +564,8 @@ export default function ProfilPage() {
               );
             })}
           </ul>
-        )}
+          );
+        })()}
       </section>
 
       {devMode && (
