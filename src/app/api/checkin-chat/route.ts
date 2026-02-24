@@ -51,7 +51,9 @@ export async function GET() {
     const todayHasStravaActivity = todayStravaActivities.length > 0;
     const firstStrava = todayStravaActivities[0];
     const complete = isCheckinComplete(todayCheckin);
-    const missing = todayCheckin ? getMissingFields(todayCheckin) : ["weight_kg", "hunger_level", "energy_level", "trained", "nutrition"];
+    const missing = todayCheckin
+      ? getMissingFields(todayCheckin)
+      : ["weight_kg", "hunger_level", "energy_level", "trained", "calories_intake", "protein_intake", "carbs_intake", "fat_intake"];
 
     let suggestedMessage: string | null = null;
 
@@ -68,7 +70,7 @@ export async function GET() {
       const parts: string[] = [];
       if (missing.includes("weight_kg")) parts.push("dein Gewicht");
       if (missing.includes("hunger_level") || missing.includes("energy_level")) parts.push("Energie & Hunger (1–5)");
-      if (missing.includes("nutrition")) parts.push("Kalorien/Makros, falls du sie hast");
+      if (missing.some((f) => ["calories_intake", "protein_intake", "carbs_intake", "fat_intake"].includes(f))) parts.push("Kalorien/Makros, falls du sie hast");
       const ask = parts.length ? parts.join(", ") : null;
       suggestedMessage = ask
         ? `Super, dein ${type} ist schon drin. Fehlt nur noch: ${ask}. Kurz reinschreiben reicht.`
@@ -79,7 +81,7 @@ export async function GET() {
       const parts: string[] = [];
       if (missing.includes("weight_kg")) parts.push("Gewicht");
       if (missing.includes("hunger_level") || missing.includes("energy_level")) parts.push("Energie & Hunger (1–5)");
-      if (missing.includes("nutrition")) parts.push("Kalorien/Makros");
+      if (missing.some((f) => ["calories_intake", "protein_intake", "carbs_intake", "fat_intake"].includes(f))) parts.push("Kalorien/Makros");
       const ask = parts.join(", ");
       suggestedMessage = ask ? `Fehlt nur noch: ${ask}. Einfach kurz antworten, kein Stress.` : null;
     }

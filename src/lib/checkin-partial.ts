@@ -45,13 +45,17 @@ export function getTodayBoundsUTC(): { start: string; end: string; dateStr: stri
   return { start, end: endStr, dateStr };
 }
 
+/** Vollständig = alle Pflichtfelder gesetzt: Gewicht, Kalorien, Makros, Energie, Hunger */
 export function isCheckinComplete(c: CheckinRow | null): boolean {
   if (!c) return false;
   return (
     c.weight_kg != null &&
-    c.hunger_level != null &&
+    c.calories_intake != null &&
+    c.protein_intake != null &&
+    c.carbs_intake != null &&
+    c.fat_intake != null &&
     c.energy_level != null &&
-    c.trained != null
+    c.hunger_level != null
   );
 }
 
@@ -61,7 +65,10 @@ export function getMissingFields(c: CheckinRow): string[] {
   if (c.hunger_level == null) missing.push("hunger_level");
   if (c.energy_level == null) missing.push("energy_level");
   if (c.trained == null) missing.push("trained");
-  if (c.calories_intake == null && c.protein_intake == null) missing.push("nutrition");
+  if (c.calories_intake == null) missing.push("calories_intake");
+  if (c.protein_intake == null) missing.push("protein_intake");
+  if (c.carbs_intake == null) missing.push("carbs_intake");
+  if (c.fat_intake == null) missing.push("fat_intake");
   return missing;
 }
 

@@ -349,7 +349,7 @@ Nur Werte die der Nutzer wirklich nennt. Fehlende Felder weglassen.`,
             if (missing.includes("weight_kg")) missingLabels.push("Gewicht");
             if (missing.includes("hunger_level") || missing.includes("energy_level")) missingLabels.push("Energie & Hunger (1–5)");
             if (missing.includes("trained")) missingLabels.push("Training heute (Ja/Nein)");
-            if (missing.includes("nutrition")) missingLabels.push("Kalorien/Makros (falls bekannt)");
+            if (missing.some((f) => ["calories_intake", "protein_intake", "carbs_intake", "fat_intake"].includes(f))) missingLabels.push("Kalorien/Makros (falls bekannt)");
             const missingStr = missingLabels.length ? missingLabels.join(", ") : "–";
             checkinConfirmationBlock = `
 

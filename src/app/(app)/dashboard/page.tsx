@@ -14,9 +14,16 @@ import {
   CartesianGrid,
 } from "recharts";
 import { useSidebar } from "@/components/layout/SidebarContext";
+import { isCheckinComplete } from "@/lib/checkin-partial";
 
 function toDateKey(createdAt: string) {
   return createdAt.slice(0, 10);
+}
+
+/** Nur vollständige Check-ins für Kalorien/Makros (calories_intake > 0). Null/0 als "–" darstellen. */
+function chartValue(v: number | null | undefined): number | null {
+  if (v == null || v <= 0) return null;
+  return v;
 }
 
 function formatDayShort(isoDate: string) {
@@ -33,8 +40,10 @@ type BriefingData = {
 
 type CheckinRow = {
   created_at: string;
-  weight_kg: number;
-  trained: boolean;
+  weight_kg?: number | null;
+  hunger_level?: number | null;
+  energy_level?: number | null;
+  trained?: boolean;
   activity_calories_burned?: number | null;
   calories_intake?: number | null;
   protein_intake?: number | null;
@@ -113,6 +122,7 @@ export default function DashboardPage() {
   const todayKey = toDateKey(today.toISOString());
   const last7 = useMemo(() => checkins.slice(-7), [checkins]);
   const todayCheckin = checkins.find((c) => toDateKey(c.created_at) === todayKey);
+  const todayCheckinComplete = todayCheckin != null && isCheckinComplete(todayCheckin);
   const macrosGoal = briefing?.macros ?? { protein: 0, carbs: 0, fat: 0 };
 
   const greeting = useMemo(() => {
@@ -129,8 +139,8 @@ export default function DashboardPage() {
         const key = toDateKey(c.created_at);
         return {
           day: formatDayShort(key),
-          Verbrauch: c.activity_calories_burned ?? 0,
-          Aufnahme: c.calories_intake ?? 0,
+          Verbrauch: chartValue(c.activity_calories_burned),
+          Aufnahme: chartValue(c.calories_intake),
         };
       }),
     [last7]
@@ -142,9 +152,9 @@ export default function DashboardPage() {
         const key = toDateKey(c.created_at);
         return {
           day: formatDayShort(key),
-          Protein: c.protein_intake ?? 0,
-          Carbs: c.carbs_intake ?? 0,
-          Fett: c.fat_intake ?? 0,
+          Protein: chartValue(c.protein_intake),
+          Carbs: chartValue(c.carbs_intake),
+          Fett: chartValue(c.fat_intake),
         };
       }),
     [last7]
@@ -154,13 +164,16 @@ export default function DashboardPage() {
     () =>
       last7.map((c) => {
         const key = toDateKey(c.created_at);
-        return { day: formatDayShort(key), kg: c.weight_kg };
+        return { day: formatDayShort(key), kg: chartValue(c.weight_kg) };
       }),
     [last7]
   );
-  const currentWeight = last7.length ? last7[last7.length - 1].weight_kg : null;
+  const lastWithWeight = last7.filter((c) => c.weight_kg != null && c.weight_kg > 0);
+  const currentWeight = lastWithWeight.length ? lastWithWeight[lastWithWeight.length - 1].weight_kg : null;
   const weightTrend =
-    last7.length >= 2 ? last7[last7.length - 1].weight_kg - last7[last7.length - 2].weight_kg : null;
+    lastWithWeight.length >= 2
+      ? lastWithWeight[lastWithWeight.length - 1].weight_kg - lastWithWeight[lastWithWeight.length - 2].weight_kg
+      : null;
 
   const calendarDays = useMemo(() => {
     const y = today.getFullYear();
@@ -184,8 +197,8 @@ export default function DashboardPage() {
     return m;
   }, [calendarEvents]);
 
-  const hasCaloriesData = caloriesLineData.length > 0 && caloriesLineData.some((d) => d.Verbrauch > 0 || d.Aufnahme > 0);
-  const hasMacrosData = macrosLineData.length > 0 && macrosLineData.some((d) => d.Protein > 0 || d.Carbs > 0 || d.Fett > 0);
+  const hasCaloriesData = caloriesLineData.length > 0 && caloriesLineData.some((d) => (d.Aufnahme != null && d.Aufnahme > 0) || (d.Verbrauch != null && d.Verbrauch > 0));
+  const hasMacrosData = caloriesLineData.length > 0 && caloriesLineData.some((d) => d.Aufnahme != null && d.Aufnahme > 0);
 
   if (loading) {
     return (
@@ -254,9 +267,9 @@ export default function DashboardPage() {
           </button>
           <Link
             href="/checkin"
-            className={`${buttonBase} ${todayCheckin ? btnCheckinDone : btnCheckinPending}`}
+            className={`${buttonBase} ${todayCheckinComplete ? btnCheckinDone : btnCheckinPending}`}
           >
-            {todayCheckin ? "Check-in ✓" : "Check-in ausstehend"}
+            {todayCheckinComplete ? "Check-in ✓" : "Check-in ausstehend"}
           </Link>
           <Link href="/dashboard/wochenbericht" className={`${buttonBase} ${btnWochen}`}>
             Wochenbericht →
@@ -275,9 +288,9 @@ export default function DashboardPage() {
         </button>
         <Link
           href="/checkin"
-          className={`flex-1 text-center ${buttonBase} ${todayCheckin ? btnCheckinDone : btnCheckinPending}`}
+          className={`flex-1 text-center ${buttonBase} ${todayCheckinComplete ? btnCheckinDone : btnCheckinPending}`}
         >
-          {todayCheckin ? "Check-in ✓" : "Check-in"}
+          {todayCheckinComplete ? "Check-in ✓" : "Check-in"}
         </Link>
         <Link href="/dashboard/wochenbericht" className={`flex-1 text-center ${buttonBase} ${btnWochen}`}>
           Wochenübersicht
@@ -346,10 +359,10 @@ export default function DashboardPage() {
                 <LineChart data={caloriesLineData} margin={{ top: 2, right: 4, left: -8, bottom: 0 }}>
                   <CartesianGrid strokeDasharray="2 2" stroke="rgba(255,255,255,0.06)" />
                   <XAxis dataKey="day" tick={{ fontSize: 9, fill: "rgba(255,255,255,0.6)" }} stroke="rgba(255,255,255,0.15)" />
-                  <YAxis tick={{ fontSize: 9, fill: "rgba(255,255,255,0.6)" }} stroke="rgba(255,255,255,0.15)" tickFormatter={(v: number | undefined) => `${v ?? 0}`} width={28} />
-                  <Tooltip contentStyle={{ background: "#18181b", border: "1px solid rgba(255,255,255,0.1)" }} formatter={(v: number | undefined, n: string | undefined) => [`${v ?? 0} kcal`, n ?? ""]} />
-                  <Line type="monotone" dataKey="Verbrauch" stroke={COLORS.burned} strokeWidth={1.5} dot={false} />
-                  <Line type="monotone" dataKey="Aufnahme" stroke={COLORS.intake} strokeWidth={1.5} dot={false} />
+                  <YAxis tick={{ fontSize: 9, fill: "rgba(255,255,255,0.6)" }} stroke="rgba(255,255,255,0.15)" tickFormatter={(v: number | undefined) => (v != null && v > 0 ? `${v}` : "–")} width={28} />
+                  <Tooltip contentStyle={{ background: "#18181b", border: "1px solid rgba(255,255,255,0.1)" }} formatter={(v: number | null | undefined, n: string | undefined) => [v != null && v > 0 ? `${v} kcal` : "–", n ?? ""]} />
+                  <Line type="monotone" dataKey="Verbrauch" stroke={COLORS.burned} strokeWidth={1.5} dot={false} connectNulls />
+                  <Line type="monotone" dataKey="Aufnahme" stroke={COLORS.intake} strokeWidth={1.5} dot={false} connectNulls />
                 </LineChart>
               </ResponsiveContainer>
             ) : (
@@ -368,11 +381,11 @@ export default function DashboardPage() {
                 <LineChart data={macrosLineData} margin={{ top: 2, right: 4, left: -8, bottom: 0 }}>
                   <CartesianGrid strokeDasharray="2 2" stroke="rgba(255,255,255,0.06)" />
                   <XAxis dataKey="day" tick={{ fontSize: 9, fill: "rgba(255,255,255,0.6)" }} stroke="rgba(255,255,255,0.15)" />
-                  <YAxis tick={{ fontSize: 9, fill: "rgba(255,255,255,0.6)" }} stroke="rgba(255,255,255,0.15)" width={28} tickFormatter={(v: number | undefined) => `${v ?? 0}`} />
-                  <Tooltip contentStyle={{ background: "#18181b", border: "1px solid rgba(255,255,255,0.1)" }} formatter={(v: number | undefined, n: string | undefined) => [`${v ?? 0} g`, n ?? ""]} />
-                  <Line type="monotone" dataKey="Protein" stroke={COLORS.protein} strokeWidth={1.5} dot={false} />
-                  <Line type="monotone" dataKey="Carbs" stroke={COLORS.carbs} strokeWidth={1.5} dot={false} />
-                  <Line type="monotone" dataKey="Fett" stroke={COLORS.fat} strokeWidth={1.5} dot={false} />
+                  <YAxis tick={{ fontSize: 9, fill: "rgba(255,255,255,0.6)" }} stroke="rgba(255,255,255,0.15)" width={28} tickFormatter={(v: number | undefined) => (v != null && v > 0 ? `${v}` : "–")} />
+                  <Tooltip contentStyle={{ background: "#18181b", border: "1px solid rgba(255,255,255,0.1)" }} formatter={(v: number | null | undefined, n: string | undefined) => [v != null && v > 0 ? `${v} g` : "–", n ?? ""]} />
+                  <Line type="monotone" dataKey="Protein" stroke={COLORS.protein} strokeWidth={1.5} dot={false} connectNulls />
+                  <Line type="monotone" dataKey="Carbs" stroke={COLORS.carbs} strokeWidth={1.5} dot={false} connectNulls />
+                  <Line type="monotone" dataKey="Fett" stroke={COLORS.fat} strokeWidth={1.5} dot={false} connectNulls />
                 </LineChart>
               </ResponsiveContainer>
             ) : (
@@ -401,9 +414,9 @@ export default function DashboardPage() {
                 <LineChart data={weightData} margin={{ top: 2, right: 4, left: -8, bottom: 0 }}>
                   <CartesianGrid strokeDasharray="2 2" stroke="rgba(255,255,255,0.06)" />
                   <XAxis dataKey="day" tick={{ fontSize: 9, fill: "rgba(255,255,255,0.6)" }} stroke="rgba(255,255,255,0.15)" />
-                  <YAxis tick={{ fontSize: 9, fill: "rgba(255,255,255,0.6)" }} stroke="rgba(255,255,255,0.15)" width={28} tickFormatter={(v: number | undefined) => `${v ?? 0}`} />
-                  <Tooltip contentStyle={{ background: "#18181b", border: "1px solid rgba(255,255,255,0.1)" }} formatter={(v: number | undefined, n: string | undefined) => [`${v ?? 0} kg`, n ?? ""]} />
-                  <Line type="monotone" dataKey="kg" stroke="#a78bfa" strokeWidth={1.5} dot={false} />
+                  <YAxis tick={{ fontSize: 9, fill: "rgba(255,255,255,0.6)" }} stroke="rgba(255,255,255,0.15)" width={28} tickFormatter={(v: number | undefined) => (v != null && v > 0 ? `${v}` : "–")} />
+                  <Tooltip contentStyle={{ background: "#18181b", border: "1px solid rgba(255,255,255,0.1)" }} formatter={(v: number | null | undefined, n: string | undefined) => [v != null && v > 0 ? `${v} kg` : "–", n ?? ""]} />
+                  <Line type="monotone" dataKey="kg" stroke="#a78bfa" strokeWidth={1.5} dot={false} connectNulls />
                 </LineChart>
               </ResponsiveContainer>
             ) : null}
