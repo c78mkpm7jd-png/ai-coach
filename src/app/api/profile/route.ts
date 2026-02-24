@@ -40,6 +40,10 @@ async function upsertProfile(userId: string, body: Record<string, unknown>) {
   if (body.calorie_target_max !== undefined) payload.calorie_target_max = body.calorie_target_max == null ? null : Number(body.calorie_target_max);
   if (body.protein_target_min !== undefined) payload.protein_target_min = body.protein_target_min == null ? null : Number(body.protein_target_min);
   if (body.protein_target_max !== undefined) payload.protein_target_max = body.protein_target_max == null ? null : Number(body.protein_target_max);
+  if (body.carbs_target_min !== undefined) payload.carbs_target_min = body.carbs_target_min == null ? null : Number(body.carbs_target_min);
+  if (body.carbs_target_max !== undefined) payload.carbs_target_max = body.carbs_target_max == null ? null : Number(body.carbs_target_max);
+  if (body.fat_target_min !== undefined) payload.fat_target_min = body.fat_target_min == null ? null : Number(body.fat_target_min);
+  if (body.fat_target_max !== undefined) payload.fat_target_max = body.fat_target_max == null ? null : Number(body.fat_target_max);
   const { data, error } = await supabaseAdmin
     .from('profiles')
     .upsert(payload, { onConflict: 'id' });

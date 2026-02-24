@@ -12,6 +12,10 @@ export default function OnboardingKalorienzielPage() {
   const [calMax, setCalMax] = useState("");
   const [proteinMin, setProteinMin] = useState("");
   const [proteinMax, setProteinMax] = useState("");
+  const [carbsMin, setCarbsMin] = useState("");
+  const [carbsMax, setCarbsMax] = useState("");
+  const [fatMin, setFatMin] = useState("");
+  const [fatMax, setFatMax] = useState("");
   const [explanation, setExplanation] = useState<string | null>(null);
   const [calculating, setCalculating] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -21,7 +25,9 @@ export default function OnboardingKalorienzielPage() {
     calMin !== "" &&
     calMax !== "" &&
     Number(calMin) <= Number(calMax) &&
-    (proteinMin === "" || proteinMax === "" || Number(proteinMin) <= Number(proteinMax));
+    (proteinMin === "" || proteinMax === "" || Number(proteinMin) <= Number(proteinMax)) &&
+    (carbsMin === "" || carbsMax === "" || Number(carbsMin) <= Number(carbsMax)) &&
+    (fatMin === "" || fatMax === "" || Number(fatMin) <= Number(fatMax));
 
   async function handleCalculate() {
     const goal = localStorage.getItem("onboarding_goal");
@@ -105,6 +111,10 @@ export default function OnboardingKalorienzielPage() {
         calorie_target_max: parseInt(calMax, 10),
         protein_target_min: proteinMin ? parseInt(proteinMin, 10) : null,
         protein_target_max: proteinMax ? parseInt(proteinMax, 10) : null,
+        carbs_target_min: carbsMin ? parseInt(carbsMin, 10) : null,
+        carbs_target_max: carbsMax ? parseInt(carbsMax, 10) : null,
+        fat_target_min: fatMin ? parseInt(fatMin, 10) : null,
+        fat_target_max: fatMax ? parseInt(fatMax, 10) : null,
         updated_at: new Date().toISOString(),
       };
 
@@ -216,6 +226,54 @@ export default function OnboardingKalorienzielPage() {
                   value={proteinMax}
                   onChange={(e) => setProteinMax(e.target.value)}
                   placeholder="z. B. 165"
+                  className="w-full rounded-xl border border-white/15 bg-zinc-900 px-3 py-2 text-sm text-white placeholder:text-white/30 focus:border-white/40 focus:ring-2 focus:ring-white/20"
+                />
+              </div>
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-white/85">Carbs Min (g, optional)</label>
+                <input
+                  type="number"
+                  min={0}
+                  max={600}
+                  value={carbsMin}
+                  onChange={(e) => setCarbsMin(e.target.value)}
+                  placeholder="z. B. 200"
+                  className="w-full rounded-xl border border-white/15 bg-zinc-900 px-3 py-2 text-sm text-white placeholder:text-white/30 focus:border-white/40 focus:ring-2 focus:ring-white/20"
+                />
+              </div>
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-white/85">Carbs Max (g, optional)</label>
+                <input
+                  type="number"
+                  min={0}
+                  max={600}
+                  value={carbsMax}
+                  onChange={(e) => setCarbsMax(e.target.value)}
+                  placeholder="z. B. 280"
+                  className="w-full rounded-xl border border-white/15 bg-zinc-900 px-3 py-2 text-sm text-white placeholder:text-white/30 focus:border-white/40 focus:ring-2 focus:ring-white/20"
+                />
+              </div>
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-white/85">Fett Min (g, optional)</label>
+                <input
+                  type="number"
+                  min={0}
+                  max={200}
+                  value={fatMin}
+                  onChange={(e) => setFatMin(e.target.value)}
+                  placeholder="z. B. 60"
+                  className="w-full rounded-xl border border-white/15 bg-zinc-900 px-3 py-2 text-sm text-white placeholder:text-white/30 focus:border-white/40 focus:ring-2 focus:ring-white/20"
+                />
+              </div>
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-white/85">Fett Max (g, optional)</label>
+                <input
+                  type="number"
+                  min={0}
+                  max={200}
+                  value={fatMax}
+                  onChange={(e) => setFatMax(e.target.value)}
+                  placeholder="z. B. 80"
                   className="w-full rounded-xl border border-white/15 bg-zinc-900 px-3 py-2 text-sm text-white placeholder:text-white/30 focus:border-white/40 focus:ring-2 focus:ring-white/20"
                 />
               </div>
