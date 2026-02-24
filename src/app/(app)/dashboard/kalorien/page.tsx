@@ -25,16 +25,27 @@ type Row = {
 
 const COLORS = { Verbrauch: "#34d399", Aufnahme: "#a78bfa" };
 
+type ProfileTarget = {
+  calorie_target_min?: number | null;
+  calorie_target_max?: number | null;
+};
+
 export default function KalorienPage() {
   const [checkins, setCheckins] = useState<Row[]>([]);
+  const [profile, setProfile] = useState<ProfileTarget | null>(null);
   const [calorieTip, setCalorieTip] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [tipLoading, setTipLoading] = useState(false);
 
   useEffect(() => {
-    fetch("/api/checkin?limit=31")
-      .then((r) => (r.ok ? r.json() : { data: [] }))
-      .then((d) => setCheckins((d?.data ?? []).slice().reverse()))
+    Promise.all([
+      fetch("/api/checkin?limit=31").then((r) => (r.ok ? r.json() : { data: [] })),
+      fetch("/api/profile").then((r) => (r.ok ? r.json() : { data: null })),
+    ])
+      .then(([checkinRes, profileRes]) => {
+        setCheckins((checkinRes?.data ?? []).slice().reverse());
+        setProfile(profileRes?.data ?? null);
+      })
       .catch(() => {})
       .finally(() => setLoading(false));
   }, []);
@@ -49,6 +60,31 @@ export default function KalorienPage() {
   };
 
   const last7 = useMemo(() => checkins.slice(-7), [checkins]);
+  const todayKey = useMemo(() => new Date().toISOString().slice(0, 10), []);
+  const todayCheckin = useMemo(
+    () => checkins.find((c) => toDateKey(c.created_at) === todayKey),
+    [checkins, todayKey]
+  );
+  const calMin = profile?.calorie_target_min;
+  const calMax = profile?.calorie_target_max;
+  const targetLabel =
+    calMin != null && calMax != null
+      ? `${calMin} – ${calMax} kcal Ziel`
+      : calMin != null
+        ? `${calMin} kcal Ziel`
+        : calMax != null
+          ? `${calMax} kcal Ziel`
+          : null;
+  const todayIntake = todayCheckin?.calories_intake ?? null;
+  const todayVsTarget =
+    todayIntake != null && todayIntake > 0 && calMin != null && calMax != null
+      ? todayIntake < calMin
+        ? "unter Ziel"
+        : todayIntake > calMax
+          ? "über Ziel"
+          : "im Zielbereich"
+      : null;
+
   const data = useMemo(
     () =>
       last7.map((c) => ({
@@ -76,6 +112,18 @@ export default function KalorienPage() {
       </Link>
       <h1 className="mt-6 text-2xl font-semibold text-white">Kalorien</h1>
       <p className="mt-1 text-sm text-white/60">Verbrauch vs. Aufnahme (letzte 7 Tage)</p>
+
+      {targetLabel && (
+        <div className="mt-4 rounded-xl border border-white/10 bg-white/5 p-4">
+          <p className="text-xs font-medium uppercase tracking-wider text-white/50">Dein Kalorienziel</p>
+          <p className="mt-1 text-lg font-semibold text-white">{targetLabel}</p>
+          {todayVsTarget != null && todayIntake != null && todayIntake > 0 && (
+            <p className="mt-1 text-sm text-white/70">
+              Heute: {todayIntake} kcal ({todayVsTarget})
+            </p>
+          )}
+        </div>
+      )}
 
       <div className="mt-6 rounded-xl border border-white/10 bg-white/5 p-4">
         <p className="text-xs font-medium uppercase tracking-wider text-white/50">Verlauf</p>

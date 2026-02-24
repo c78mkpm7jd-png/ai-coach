@@ -21,6 +21,7 @@ import {
   getMissingFields,
   type CheckinRow as PartialCheckinRow,
 } from "@/lib/checkin-partial";
+import { getTargetRangeFromProfile } from "@/lib/coach";
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const supabaseServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
@@ -54,6 +55,10 @@ type ProfileRow = {
   training_days_per_week?: number;
   first_name?: string | null;
   strava_connected?: boolean | null;
+  calorie_target_min?: number | null;
+  calorie_target_max?: number | null;
+  protein_target_min?: number | null;
+  protein_target_max?: number | null;
 };
 
 type CheckinRow = {
@@ -206,9 +211,39 @@ export async function POST(request: NextRequest) {
         .order("created_at", { ascending: true }),
     ]);
 
-    const profile = profileRes.data as ProfileRow | null;
+    let profile = profileRes.data as ProfileRow | null;
     const checkins = (checkinsRes.data ?? []) as CheckinRow[];
     const existingMessages = (messagesRes.data ?? []) as { role: string; content: string }[];
+
+    // Bestehende Nutzer: Kalorien-/Proteinziel still setzen, wenn noch nicht vorhanden
+    if (
+      profile &&
+      (profile.calorie_target_min == null || profile.calorie_target_max == null) &&
+      profile.weight != null &&
+      profile.height != null &&
+      profile.age != null &&
+      profile.goal != null
+    ) {
+      const range = getTargetRangeFromProfile({
+        weightKg: Number(profile.weight),
+        heightCm: Number(profile.height),
+        age: Number(profile.age),
+        isFemale: String(profile.gender) === "w",
+        activityLevel: String(profile.activity_level ?? "sitzend"),
+        goal: String(profile.goal),
+      });
+      await supabaseAdmin
+        .from("profiles")
+        .update({
+          calorie_target_min: range.calorie_target_min,
+          calorie_target_max: range.calorie_target_max,
+          protein_target_min: range.protein_target_min,
+          protein_target_max: range.protein_target_max,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", userId);
+      profile = { ...profile, ...range };
+    }
 
     const stravaConnected = !!profile?.strava_connected;
     console.log("[Chat] Strava connected:", stravaConnected);
@@ -393,6 +428,10 @@ ${complete
       weight,
       training_days_per_week: profile?.training_days_per_week,
       first_name: profile?.first_name ?? null,
+      calorie_target_min: profile?.calorie_target_min ?? null,
+      calorie_target_max: profile?.calorie_target_max ?? null,
+      protein_target_min: profile?.protein_target_min ?? null,
+      protein_target_max: profile?.protein_target_max ?? null,
     };
     const coachCtx = getCoachContext(profileForCoach, targetCalories, macros);
     const coachCheckins = checkins.map((c) => ({ ...c })) as CoachCheckinRow[];

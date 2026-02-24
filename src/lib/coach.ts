@@ -32,6 +32,64 @@ export function getTargetCaloriesFromTdee(tdee: number, goal: string): number {
   }
 }
 
+/** Berechnet Kalorien- und Protein-Zielbereich aus Profildaten (für Onboarding & bestehende Nutzer). */
+export function getTargetRangeFromProfile(params: {
+  weightKg: number;
+  heightCm: number;
+  age: number;
+  isFemale: boolean;
+  activityLevel: string;
+  goal: string;
+}): {
+  calorie_target_min: number;
+  calorie_target_max: number;
+  protein_target_min: number;
+  protein_target_max: number;
+  explanation: string;
+} {
+  const tdee = estimateTdee(
+    params.weightKg,
+    params.heightCm,
+    params.age,
+    params.isFemale,
+    params.activityLevel
+  );
+  let calMin: number;
+  let calMax: number;
+  switch (params.goal) {
+    case "cut":
+      calMin = Math.round(tdee - 500);
+      calMax = Math.round(tdee - 300);
+      break;
+    case "lean-bulk":
+      calMin = Math.round(tdee + 200);
+      calMax = Math.round(tdee + 400);
+      break;
+    case "recomp":
+    case "maintain":
+    default:
+      calMin = Math.round(tdee - 100);
+      calMax = Math.round(tdee + 100);
+  }
+  const proteinMin = Math.round(params.weightKg * 1.8);
+  const proteinMax = Math.round(params.weightKg * 2.2);
+  const goalLabels: Record<string, string> = {
+    cut: "Cut (Fett reduzieren)",
+    "lean-bulk": "Lean Bulk (Masse aufbauen)",
+    recomp: "Recomp",
+    maintain: "Maintain",
+  };
+  const goalLabel = goalLabels[params.goal] ?? params.goal;
+  const explanation = `Basierend auf deinem Grundumsatz (BMR), Aktivitätslevel und Ziel „${goalLabel}“: TDEE ca. ${tdee} kcal. Kalorienziel ${calMin}–${calMax} kcal, Protein ${proteinMin}–${proteinMax} g (1,8–2,2 g/kg).`;
+  return {
+    calorie_target_min: calMin,
+    calorie_target_max: calMax,
+    protein_target_min: proteinMin,
+    protein_target_max: proteinMax,
+    explanation,
+  };
+}
+
 export function getMacrosSimple(
   targetCalories: number,
   weightKg: number,
@@ -87,8 +145,12 @@ export type CoachContext = {
   targetProtein: number;
   targetCarbs: number;
   targetFat: number;
+  /** Optional: Bereich für Analyse "unter/im/über Ziel" */
+  targetCaloriesMin?: number;
+  targetCaloriesMax?: number;
+  targetProteinMin?: number;
+  targetProteinMax?: number;
   trainingDaysPerWeek: number;
-  /** Gesundheits-Overrides: schlechter Schlaf / niedrige Energie → Regeneration priorisieren */
   healthOverrideRegeneration: boolean;
   healthOverrideTrainingVolume: boolean;
   userName?: string;
@@ -131,6 +193,10 @@ export function getCoachContext(
     weight?: number;
     training_days_per_week?: number;
     first_name?: string | null;
+    calorie_target_min?: number | null;
+    calorie_target_max?: number | null;
+    protein_target_min?: number | null;
+    protein_target_max?: number | null;
   },
   targetCalories: number,
   targets: { protein: number; carbs: number; fat: number; calories?: number }
@@ -149,15 +215,26 @@ export function getCoachContext(
   const weekday = new Intl.DateTimeFormat("de-DE", { weekday: "long" }).format(now);
   const weekdayFocus = WEEKDAY_FOCUS[weekdayNum] ?? "neutral";
 
+  const calMin = profile.calorie_target_min != null ? profile.calorie_target_min : undefined;
+  const calMax = profile.calorie_target_max != null ? profile.calorie_target_max : undefined;
+  const proteinMin = profile.protein_target_min != null ? profile.protein_target_min : undefined;
+  const proteinMax = profile.protein_target_max != null ? profile.protein_target_max : undefined;
+  const effectiveCal = calMin != null && calMax != null ? Math.round((calMin + calMax) / 2) : (targets?.calories ?? targetCalories);
+  const effectiveProtein = targets.protein;
+
   return {
     weekday,
     weekdayFocus,
     goal,
     goalLabel: goalLabels[goal],
-    targetCalories: targets?.calories ?? targetCalories,
-    targetProtein: targets.protein,
+    targetCalories: effectiveCal,
+    targetProtein: effectiveProtein,
     targetCarbs: targets.carbs,
     targetFat: targets.fat,
+    targetCaloriesMin: calMin,
+    targetCaloriesMax: calMax,
+    targetProteinMin: proteinMin,
+    targetProteinMax: proteinMax,
     trainingDaysPerWeek: Number(profile.training_days_per_week) || 4,
     healthOverrideRegeneration: false,
     healthOverrideTrainingVolume: false,
@@ -245,29 +322,50 @@ export function analyzeSignals(
     }
   }
 
-  // Kalorientrend relativ zum Ziel
+  // Kalorientrend relativ zum Ziel (Bereich oder Einzelwert)
   if (n >= 3) {
     const withCal = sorted.filter((c) => typeof c.calories_intake === "number" && c.calories_intake > 0);
     if (withCal.length >= 3) {
       const avgCal =
         withCal.reduce((a, c) => a + (c.calories_intake ?? 0), 0) / withCal.length;
-      const diff = avgCal - ctx.targetCalories;
+      const calMin = ctx.targetCaloriesMin;
+      const calMax = ctx.targetCaloriesMax;
+      const hasRange = calMin != null && calMax != null;
+      let observation: string;
+      let diff: number;
+      if (hasRange) {
+        if (avgCal < calMin) {
+          observation = `Durchschnitt ${Math.round(avgCal)} kcal. Du bist unter deinem Zielbereich (${calMin}–${calMax} kcal).`;
+          diff = avgCal - calMin;
+        } else if (avgCal > calMax) {
+          observation = `Durchschnitt ${Math.round(avgCal)} kcal. Du bist über deinem Zielbereich (${calMin}–${calMax} kcal).`;
+          diff = avgCal - calMax;
+        } else {
+          observation = `Durchschnitt ${Math.round(avgCal)} kcal. Du bist im Zielbereich (${calMin}–${calMax} kcal).`;
+          diff = 0;
+        }
+      } else {
+        diff = avgCal - ctx.targetCalories;
+        observation = `Durchschnitt ${Math.round(avgCal)} kcal (Ziel ${ctx.targetCalories}). ${diff > 0 ? "+" : ""}${Math.round(diff)} kcal.`;
+      }
       const intensity =
         ctx.goal === "cut" && diff > 200 ? 4 :
         ctx.goal === "cut" && diff > 0 ? 2 :
         ctx.goal === "lean-bulk" && diff < -200 ? 4 :
         ctx.goal === "lean-bulk" && diff < 0 ? 2 :
-        Math.abs(diff) > 300 ? 3 : 1;
+        Math.abs(diff) > 300 ? 3 : diff === 0 && hasRange ? 0 : 1;
       const goalWeight = ctx.goal === "cut" || ctx.goal === "lean-bulk" ? 1.2 : 1;
-      signals.push({
-        type: "calories",
-        label: "Kalorien",
-        intensity,
-        observation: `Durchschnitt ${Math.round(avgCal)} kcal (Ziel ${ctx.targetCalories}). ${diff > 0 ? "+" : ""}${Math.round(diff)} kcal.`,
-        goalWeight,
-        healthBonus: 0,
-        score: Math.round(intensity * goalWeight * 10) / 10,
-      });
+      if (intensity > 0 || !hasRange) {
+        signals.push({
+          type: "calories",
+          label: "Kalorien",
+          intensity: intensity || 1,
+          observation,
+          goalWeight,
+          healthBonus: 0,
+          score: Math.round((intensity || 1) * goalWeight * 10) / 10,
+        });
+      }
     }
   }
 
@@ -294,21 +392,46 @@ export function analyzeSignals(
     }
   }
 
-  // Protein unter Ziel über 3+ Tage
+  // Protein: Bereich oder Einzelziel
   if (n >= 3) {
     const withProtein = sorted.filter((c) => typeof c.protein_intake === "number");
     if (withProtein.length >= 3) {
-      const underTarget = withProtein.filter((c) => (c.protein_intake ?? 0) < ctx.targetProtein - 15);
+      const pMin = ctx.targetProteinMin ?? ctx.targetProtein - 15;
+      const pMax = ctx.targetProteinMax ?? ctx.targetProtein + 15;
+      const hasRange = ctx.targetProteinMin != null && ctx.targetProteinMax != null;
+      const underTarget = withProtein.filter((c) => (c.protein_intake ?? 0) < pMin);
+      const overTarget = hasRange ? withProtein.filter((c) => (c.protein_intake ?? 0) > pMax) : [];
+      const avgP = withProtein.reduce((a, c) => a + (c.protein_intake ?? 0), 0) / withProtein.length;
+      let observation: string;
+      let intensity: number;
       if (underTarget.length >= 3) {
-        const avgP = withProtein.reduce((a, c) => a + (c.protein_intake ?? 0), 0) / withProtein.length;
-        const deficit = ctx.targetProtein - avgP;
-        const intensity = deficit > 40 ? 4 : deficit > 25 ? 3 : 2;
+        const deficit = pMin - avgP;
+        intensity = deficit > 40 ? 4 : deficit > 25 ? 3 : 2;
+        observation = hasRange
+          ? `An ${underTarget.length} von ${withProtein.length} Tagen unter Protein-Zielbereich (Ø ${Math.round(avgP)} g, Ziel ${pMin}–${pMax} g).`
+          : `An ${underTarget.length} von ${withProtein.length} Tagen unter Protein-Ziel (Ø ${Math.round(avgP)} g, Ziel ${ctx.targetProtein} g).`;
+      } else if (hasRange && overTarget.length >= 3) {
+        observation = `An ${overTarget.length} von ${withProtein.length} Tagen über Protein-Zielbereich (Ø ${Math.round(avgP)} g, Ziel ${pMin}–${pMax} g).`;
+        intensity = 2;
+      } else if (underTarget.length > 0 && (hasRange ? avgP < pMin : avgP < ctx.targetProtein - 15)) {
+        const deficit = (hasRange ? pMin : ctx.targetProtein) - avgP;
+        intensity = deficit > 40 ? 4 : deficit > 25 ? 3 : 2;
+        observation = hasRange
+          ? `Ø ${Math.round(avgP)} g Protein. Du bist unter deinem Zielbereich (${pMin}–${pMax} g).`
+          : `An ${underTarget.length} von ${withProtein.length} Tagen unter Protein-Ziel (Ø ${Math.round(avgP)} g, Ziel ${ctx.targetProtein} g).`;
+      } else {
+        observation = hasRange
+          ? `Ø ${Math.round(avgP)} g Protein. Du bist im Zielbereich (${pMin}–${pMax} g).`
+          : `An ${underTarget.length} von ${withProtein.length} Tagen unter Protein-Ziel (Ø ${Math.round(avgP)} g, Ziel ${ctx.targetProtein} g).`;
+        intensity = 0;
+      }
+      if (intensity > 0) {
         const goalWeight = ctx.goal === "cut" || ctx.goal === "recomp" ? 1.3 : 1.1;
         signals.push({
           type: "protein",
           label: "Protein",
           intensity,
-          observation: `An ${underTarget.length} von ${withProtein.length} Tagen unter Protein-Ziel (Ø ${Math.round(avgP)} g, Ziel ${ctx.targetProtein} g).`,
+          observation,
           goalWeight,
           healthBonus: 0,
           score: Math.round(intensity * goalWeight * 10) / 10,
@@ -383,8 +506,16 @@ export function buildAnalysisInstructions(
           )
           .join("\n");
 
+  const calTarget =
+    ctx.targetCaloriesMin != null && ctx.targetCaloriesMax != null
+      ? `${ctx.targetCaloriesMin}–${ctx.targetCaloriesMax} kcal`
+      : `${ctx.targetCalories} kcal`;
+  const proteinTarget =
+    ctx.targetProteinMin != null && ctx.targetProteinMax != null
+      ? `${ctx.targetProteinMin}–${ctx.targetProteinMax} g`
+      : `${ctx.targetProtein} g`;
   return `Kontext: Heute ist ${ctx.weekday} (Fokus: ${ctx.weekdayFocus}). Ziel: ${ctx.goalLabel}.
-Zielwerte: ${ctx.targetCalories} kcal, ${ctx.targetProtein} g Protein, ${ctx.targetCarbs} g Carbs, ${ctx.targetFat} g Fett.
+Zielwerte: ${calTarget} Kalorien, ${proteinTarget} Protein, ${ctx.targetCarbs} g Carbs, ${ctx.targetFat} g Fett.
 Konfidenz: ${confidence} (${signals.checkinCount} Check-ins).
 
 Prioritäten (nur diese kommentieren, max. 2 Themen):
@@ -468,10 +599,18 @@ export function buildChatCoachContextBlock(
 ): string {
   const { topPriorities, shouldStaySilent } = signals;
 
+  const calTarget =
+    ctx.targetCaloriesMin != null && ctx.targetCaloriesMax != null
+      ? `${ctx.targetCaloriesMin}–${ctx.targetCaloriesMax} kcal`
+      : `${ctx.targetCalories} kcal`;
+  const proteinTarget =
+    ctx.targetProteinMin != null && ctx.targetProteinMax != null
+      ? `${ctx.targetProteinMin}–${ctx.targetProteinMax} g`
+      : `${ctx.targetProtein} g`;
   let block = `## Kontext
 - Wochentag: ${ctx.weekday} (Fokus: ${ctx.weekdayFocus})
 - Ziel: ${ctx.goalLabel}
-- Zielwerte: ${ctx.targetCalories} kcal, ${ctx.targetProtein} g Protein
+- Zielwerte: ${calTarget} Kalorien, ${proteinTarget} Protein
 - Check-ins (letzte 7): ${signals.checkinCount} vorhanden. Konfidenz: ${signals.confidence}
 ${checkinsSummary ? `\nCheck-in-Daten:\n${checkinsSummary}` : ""}
 `;

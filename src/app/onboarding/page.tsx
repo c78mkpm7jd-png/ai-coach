@@ -27,7 +27,7 @@ export default function OnboardingPage() {
         <div className="flex flex-col gap-8">
           <div className="max-w-xl space-y-3">
             <p className="text-xs font-medium uppercase tracking-[0.2em] text-white/40">
-              Schritt 1 von 3
+              Schritt 1 von 4
             </p>
             <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">
               Was ist dein aktuelles Ziel?

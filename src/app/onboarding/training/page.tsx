@@ -1,9 +1,8 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useUser } from "@clerk/nextjs";
 
 const TRAINING_DAYS = [3, 4, 5, 6];
 
@@ -15,87 +14,16 @@ const ACTIVITY_LEVELS = [
 
 export default function OnboardingTrainingPage() {
   const router = useRouter();
-  const { user } = useUser();
   const [daysPerWeek, setDaysPerWeek] = useState<number | null>(null);
   const [activity, setActivity] = useState<string | null>(null);
-  const [isSaving, setIsSaving] = useState(false);
 
   const isValid = !!daysPerWeek && !!activity;
 
-  async function handleContinue() {
-    if (!isValid || !user) return;
-
-    setIsSaving(true);
-
-    try {
-      // Sammle alle Onboarding-Daten aus localStorage
-      const goal = localStorage.getItem("onboarding_goal");
-      const age = localStorage.getItem("onboarding_age");
-      const gender = localStorage.getItem("onboarding_gender");
-      const height = localStorage.getItem("onboarding_height");
-      const weight = localStorage.getItem("onboarding_weight");
-
-      if (!goal || !age || !gender || !height || !weight) {
-        throw new Error("Fehlende Onboarding-Daten");
-      }
-
-      // Daten die gespeichert werden sollen
-      const profileData = {
-        id: user.id,
-        goal: goal,
-        age: parseInt(age, 10),
-        gender: gender,
-        height: parseInt(height, 10),
-        weight: parseFloat(weight),
-        activity_level: activity,
-        training_days_per_week: daysPerWeek,
-        updated_at: new Date().toISOString(),
-      };
-
-      console.log("📝 Daten die gespeichert werden sollen:", profileData);
-      console.log("👤 User ID:", user.id);
-
-      // Speichere Profil über API Route (verwendet Service Role Key)
-      const response = await fetch("/api/profile", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(profileData),
-      });
-
-      const result = await response.json();
-
-      if (!response.ok) {
-        console.error("❌ ========== API FEHLER ==========");
-        console.error("❌ Status:", response.status);
-        console.error("❌ error:", result.error);
-        console.error("❌ details:", result.details);
-        console.error("❌ code:", result.code);
-        console.error("❌ Vollständige Response:", JSON.stringify(result, null, 2));
-        console.error("❌ =====================================");
-        throw new Error(result.error || "Fehler beim Speichern des Profils");
-      }
-
-      console.log("✅ Daten erfolgreich gespeichert:", result.data);
-
-      // Lösche temporäre Daten aus localStorage
-      localStorage.removeItem("onboarding_goal");
-      localStorage.removeItem("onboarding_age");
-      localStorage.removeItem("onboarding_gender");
-      localStorage.removeItem("onboarding_height");
-      localStorage.removeItem("onboarding_weight");
-
-      router.push("/dashboard");
-    } catch (error) {
-      console.error("❌ Fehler beim Speichern des Profils:", error);
-      if (error instanceof Error) {
-        console.error("❌ Fehler-Message:", error.message);
-        console.error("❌ Fehler-Stack:", error.stack);
-      }
-      alert("Fehler beim Speichern der Daten. Bitte versuche es erneut.");
-      setIsSaving(false);
-    }
+  function handleContinue() {
+    if (!isValid) return;
+    localStorage.setItem("onboarding_activity", activity ?? "");
+    localStorage.setItem("onboarding_training_days", String(daysPerWeek ?? ""));
+    router.push("/onboarding/kalorienziel");
   }
 
   return (
@@ -110,7 +38,7 @@ export default function OnboardingTrainingPage() {
         <div className="flex flex-col gap-8">
           <div className="max-w-xl space-y-3">
             <p className="text-xs font-medium uppercase tracking-[0.2em] text-white/40">
-              Schritt 3 von 3
+              Schritt 3 von 4
             </p>
             <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">
               Training & Alltag
@@ -192,15 +120,15 @@ export default function OnboardingTrainingPage() {
             </p>
             <button
               type="button"
-              disabled={!isValid || isSaving}
+              disabled={!isValid}
               onClick={handleContinue}
               className={`inline-flex items-center justify-center rounded-full px-6 py-2 text-sm font-medium transition focus:outline-none focus:ring-2 focus:ring-white/30 ${
-                isValid && !isSaving
+                isValid
                   ? "bg-white text-zinc-950 hover:bg-white/90"
                   : "cursor-not-allowed border border-white/15 bg-transparent text-white/40"
               }`}
             >
-              {isSaving ? "Wird gespeichert..." : "Weiter zum Dashboard"}
+              Weiter
             </button>
           </div>
         </div>

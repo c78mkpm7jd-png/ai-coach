@@ -36,6 +36,10 @@ async function upsertProfile(userId: string, body: Record<string, unknown>) {
   if (body.checkin_reminder_time !== undefined) {
     payload.checkin_reminder_time = body.checkin_reminder_time as string | null;
   }
+  if (body.calorie_target_min !== undefined) payload.calorie_target_min = body.calorie_target_min == null ? null : Number(body.calorie_target_min);
+  if (body.calorie_target_max !== undefined) payload.calorie_target_max = body.calorie_target_max == null ? null : Number(body.calorie_target_max);
+  if (body.protein_target_min !== undefined) payload.protein_target_min = body.protein_target_min == null ? null : Number(body.protein_target_min);
+  if (body.protein_target_max !== undefined) payload.protein_target_max = body.protein_target_max == null ? null : Number(body.protein_target_max);
   const { data, error } = await supabaseAdmin
     .from('profiles')
     .upsert(payload, { onConflict: 'id' });
@@ -116,6 +120,27 @@ export async function PUT(request: NextRequest) {
     console.error('❌ API PUT:', error);
     return NextResponse.json(
       { error: 'Fehler beim Speichern des Profils', message: error instanceof Error ? error.message : 'Unbekannter Fehler' },
+      { status: 500 }
+    );
+  }
+}
+
+/** Onboarding zurücksetzen: Profil löschen (nur für Dev, z. B. ?dev=true auf Profil-Seite). */
+export async function DELETE() {
+  try {
+    const { userId } = await auth();
+    if (!userId) {
+      return NextResponse.json({ error: 'Nicht autorisiert' }, { status: 401 });
+    }
+
+    const { error } = await supabaseAdmin.from('profiles').delete().eq('id', userId);
+
+    if (error) throw error;
+    return NextResponse.json({ success: true }, { status: 200 });
+  } catch (error) {
+    console.error('❌ API DELETE profile:', error);
+    return NextResponse.json(
+      { error: 'Fehler beim Zurücksetzen', message: error instanceof Error ? error.message : 'Unbekannter Fehler' },
       { status: 500 }
     );
   }

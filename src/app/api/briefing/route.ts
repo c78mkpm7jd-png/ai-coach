@@ -6,6 +6,7 @@ import {
   getCoachContext,
   analyzeSignals,
   buildAnalysisInstructions,
+  getTargetRangeFromProfile,
   type CheckinRow as CoachCheckinRow,
 } from '@/lib/coach'
 
@@ -105,7 +106,7 @@ export async function GET(request: Request) {
         .limit(7),
     ])
 
-    const profile = profileRes.data
+    let profile = profileRes.data
     const checkins = checkinsRes.data ?? []
 
     if (!profile) {
@@ -113,6 +114,35 @@ export async function GET(request: Request) {
         { error: 'Profil nicht gefunden. Bitte Onboarding abschließen.' },
         { status: 404 }
       )
+    }
+
+    // Bestehende Nutzer: Kalorien-/Proteinziel still im Hintergrund setzen, wenn noch nicht vorhanden
+    if (
+      (profile.calorie_target_min == null || profile.calorie_target_max == null) &&
+      profile.weight != null &&
+      profile.height != null &&
+      profile.age != null &&
+      profile.goal != null
+    ) {
+      const range = getTargetRangeFromProfile({
+        weightKg: Number(profile.weight),
+        heightCm: Number(profile.height),
+        age: Number(profile.age),
+        isFemale: String(profile.gender) === 'w',
+        activityLevel: String(profile.activity_level || 'sitzend'),
+        goal: String(profile.goal),
+      })
+      await supabaseAdmin
+        .from('profiles')
+        .update({
+          calorie_target_min: range.calorie_target_min,
+          calorie_target_max: range.calorie_target_max,
+          protein_target_min: range.protein_target_min,
+          protein_target_max: range.protein_target_max,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', userId)
+      profile = { ...profile, ...range }
     }
 
     const weight = Number(profile.weight) || 70
@@ -279,6 +309,10 @@ Deine Antwort muss valides JSON sein mit exakt diesen Feldern (kein anderer Text
         weight,
         training_days_per_week: profile.training_days_per_week,
         first_name: profile.first_name ?? null,
+        calorie_target_min: profile.calorie_target_min ?? null,
+        calorie_target_max: profile.calorie_target_max ?? null,
+        protein_target_min: profile.protein_target_min ?? null,
+        protein_target_max: profile.protein_target_max ?? null,
       }
       const coachCtx = getCoachContext(profileForCoach, targetCalories, {
         ...macros,

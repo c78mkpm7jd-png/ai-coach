@@ -2,6 +2,7 @@
 
 import { useState, useEffect, FormEvent } from "react";
 import Link from "next/link";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useUser } from "@clerk/nextjs";
 
 const GOALS = [
@@ -57,8 +58,12 @@ const ACTIVITY_LABELS: Record<string, string> = {
 };
 
 export default function ProfilPage() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const { user } = useUser();
   const [loading, setLoading] = useState(true);
+  const devMode = searchParams.get("dev") === "true";
+  const [resetting, setResetting] = useState(false);
   const [saving, setSaving] = useState(false);
   const [goal, setGoal] = useState("");
   const [age, setAge] = useState("");
@@ -382,6 +387,31 @@ export default function ProfilPage() {
           </ul>
         )}
       </section>
+
+      {devMode && (
+        <section className="mt-12 border-t border-white/10 pt-8">
+          <h2 className="text-sm font-semibold text-white/70">Entwicklung</h2>
+          <button
+            type="button"
+            disabled={resetting}
+            onClick={async () => {
+              if (!confirm("Profil wirklich löschen und Onboarding neu starten?")) return;
+              setResetting(true);
+              try {
+                const res = await fetch("/api/profile", { method: "DELETE" });
+                if (!res.ok) throw new Error("Reset fehlgeschlagen");
+                router.push("/onboarding");
+              } catch (e) {
+                alert(e instanceof Error ? e.message : "Fehler");
+                setResetting(false);
+              }
+            }}
+            className="mt-3 rounded-lg border border-amber-400/40 bg-amber-400/10 px-3 py-2 text-sm font-medium text-amber-200 hover:bg-amber-400/20 disabled:opacity-50"
+          >
+            {resetting ? "Wird zurückgesetzt …" : "Onboarding zurücksetzen"}
+          </button>
+        </section>
+      )}
     </div>
   );
 }
