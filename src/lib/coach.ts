@@ -58,8 +58,8 @@ export function getTargetRangeFromProfile(params: {
   let calMax: number;
   switch (params.goal) {
     case "cut":
-      calMin = Math.round(tdee - 500);
-      calMax = Math.round(tdee - 300);
+      calMin = Math.round(tdee - 400);
+      calMax = Math.round(tdee - 200);
       break;
     case "lean-bulk":
       calMin = Math.round(tdee + 200);
