@@ -29,6 +29,14 @@ type Profile = {
   weight: number;
   activity_level: string;
   training_days_per_week: number;
+  calorie_target_min?: number | null;
+  calorie_target_max?: number | null;
+  protein_target_min?: number | null;
+  protein_target_max?: number | null;
+  carbs_target_min?: number | null;
+  carbs_target_max?: number | null;
+  fat_target_min?: number | null;
+  fat_target_max?: number | null;
 };
 
 type Checkin = {
@@ -75,6 +83,16 @@ export default function ProfilPage() {
   const [checkins, setCheckins] = useState<Checkin[]>([]);
   const [checkinsLoading, setCheckinsLoading] = useState(false);
   const [deletingDate, setDeletingDate] = useState<string | null>(null);
+  const [calorieTargetMin, setCalorieTargetMin] = useState("");
+  const [calorieTargetMax, setCalorieTargetMax] = useState("");
+  const [proteinTargetMin, setProteinTargetMin] = useState("");
+  const [proteinTargetMax, setProteinTargetMax] = useState("");
+  const [carbsTargetMin, setCarbsTargetMin] = useState("");
+  const [carbsTargetMax, setCarbsTargetMax] = useState("");
+  const [fatTargetMin, setFatTargetMin] = useState("");
+  const [fatTargetMax, setFatTargetMax] = useState("");
+  const [targetsSaving, setTargetsSaving] = useState(false);
+  const [targetsSaved, setTargetsSaved] = useState(false);
 
   function loadCheckins() {
     if (!user) return;
@@ -100,6 +118,14 @@ export default function ProfilPage() {
           setWeight(String(p.weight ?? ""));
           setActivity(p.activity_level || "");
           setDaysPerWeek(p.training_days_per_week ?? null);
+          setCalorieTargetMin(p.calorie_target_min != null ? String(p.calorie_target_min) : "");
+          setCalorieTargetMax(p.calorie_target_max != null ? String(p.calorie_target_max) : "");
+          setProteinTargetMin(p.protein_target_min != null ? String(p.protein_target_min) : "");
+          setProteinTargetMax(p.protein_target_max != null ? String(p.protein_target_max) : "");
+          setCarbsTargetMin(p.carbs_target_min != null ? String(p.carbs_target_min) : "");
+          setCarbsTargetMax(p.carbs_target_max != null ? String(p.carbs_target_max) : "");
+          setFatTargetMin(p.fat_target_min != null ? String(p.fat_target_min) : "");
+          setFatTargetMax(p.fat_target_max != null ? String(p.fat_target_max) : "");
         }
       })
       .catch(() => {})
@@ -139,6 +165,36 @@ export default function ProfilPage() {
       alert(err instanceof Error ? err.message : "Fehler beim Speichern.");
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function handleSaveTargets(e: React.FormEvent) {
+    e.preventDefault();
+    setTargetsSaving(true);
+    setTargetsSaved(false);
+    try {
+      const res = await fetch("/api/profile", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          calorie_target_min: calorieTargetMin ? parseInt(calorieTargetMin, 10) : null,
+          calorie_target_max: calorieTargetMax ? parseInt(calorieTargetMax, 10) : null,
+          protein_target_min: proteinTargetMin ? parseInt(proteinTargetMin, 10) : null,
+          protein_target_max: proteinTargetMax ? parseInt(proteinTargetMax, 10) : null,
+          carbs_target_min: carbsTargetMin ? parseInt(carbsTargetMin, 10) : null,
+          carbs_target_max: carbsTargetMax ? parseInt(carbsTargetMax, 10) : null,
+          fat_target_min: fatTargetMin ? parseInt(fatTargetMin, 10) : null,
+          fat_target_max: fatTargetMax ? parseInt(fatTargetMax, 10) : null,
+        }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || "Fehler beim Speichern");
+      setTargetsSaved(true);
+      setTimeout(() => setTargetsSaved(false), 3000);
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Fehler beim Speichern.");
+    } finally {
+      setTargetsSaving(false);
     }
   }
 
@@ -333,6 +389,126 @@ export default function ProfilPage() {
           </button>
         </div>
       </form>
+
+      {/* Ziele & Makros */}
+      <section className="mt-12 border-t border-white/10 pt-10">
+        <h2 className="text-lg font-semibold text-white/90 mb-2">Ziele & Makros</h2>
+        <p className="text-sm text-white/60 mb-6">
+          Kalorien- und Makro-Bereiche für Coach und Dashboard. Jederzeit anpassbar.
+        </p>
+        <form onSubmit={handleSaveTargets} className="space-y-6">
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div>
+              <label className="text-xs text-white/70">Kalorienziel Min (kcal)</label>
+              <input
+                type="number"
+                min={800}
+                max={6000}
+                value={calorieTargetMin}
+                onChange={(e) => setCalorieTargetMin(e.target.value)}
+                placeholder="z. B. 2200"
+                className="mt-1 w-full rounded-xl border border-white/15 bg-zinc-900 px-3 py-2 text-sm text-white placeholder:text-white/30 focus:border-white/40 focus:ring-2 focus:ring-white/20"
+              />
+            </div>
+            <div>
+              <label className="text-xs text-white/70">Kalorienziel Max (kcal)</label>
+              <input
+                type="number"
+                min={800}
+                max={6000}
+                value={calorieTargetMax}
+                onChange={(e) => setCalorieTargetMax(e.target.value)}
+                placeholder="z. B. 2400"
+                className="mt-1 w-full rounded-xl border border-white/15 bg-zinc-900 px-3 py-2 text-sm text-white placeholder:text-white/30 focus:border-white/40 focus:ring-2 focus:ring-white/20"
+              />
+            </div>
+            <div>
+              <label className="text-xs text-white/70">Protein Ziel Min (g)</label>
+              <input
+                type="number"
+                min={0}
+                max={500}
+                value={proteinTargetMin}
+                onChange={(e) => setProteinTargetMin(e.target.value)}
+                placeholder="z. B. 135"
+                className="mt-1 w-full rounded-xl border border-white/15 bg-zinc-900 px-3 py-2 text-sm text-white placeholder:text-white/30 focus:border-white/40 focus:ring-2 focus:ring-white/20"
+              />
+            </div>
+            <div>
+              <label className="text-xs text-white/70">Protein Ziel Max (g)</label>
+              <input
+                type="number"
+                min={0}
+                max={500}
+                value={proteinTargetMax}
+                onChange={(e) => setProteinTargetMax(e.target.value)}
+                placeholder="z. B. 165"
+                className="mt-1 w-full rounded-xl border border-white/15 bg-zinc-900 px-3 py-2 text-sm text-white placeholder:text-white/30 focus:border-white/40 focus:ring-2 focus:ring-white/20"
+              />
+            </div>
+            <div>
+              <label className="text-xs text-white/70">Carbs Ziel Min (g)</label>
+              <input
+                type="number"
+                min={0}
+                max={600}
+                value={carbsTargetMin}
+                onChange={(e) => setCarbsTargetMin(e.target.value)}
+                placeholder="z. B. 200"
+                className="mt-1 w-full rounded-xl border border-white/15 bg-zinc-900 px-3 py-2 text-sm text-white placeholder:text-white/30 focus:border-white/40 focus:ring-2 focus:ring-white/20"
+              />
+            </div>
+            <div>
+              <label className="text-xs text-white/70">Carbs Ziel Max (g)</label>
+              <input
+                type="number"
+                min={0}
+                max={600}
+                value={carbsTargetMax}
+                onChange={(e) => setCarbsTargetMax(e.target.value)}
+                placeholder="z. B. 280"
+                className="mt-1 w-full rounded-xl border border-white/15 bg-zinc-900 px-3 py-2 text-sm text-white placeholder:text-white/30 focus:border-white/40 focus:ring-2 focus:ring-white/20"
+              />
+            </div>
+            <div>
+              <label className="text-xs text-white/70">Fett Ziel Min (g)</label>
+              <input
+                type="number"
+                min={0}
+                max={200}
+                value={fatTargetMin}
+                onChange={(e) => setFatTargetMin(e.target.value)}
+                placeholder="z. B. 60"
+                className="mt-1 w-full rounded-xl border border-white/15 bg-zinc-900 px-3 py-2 text-sm text-white placeholder:text-white/30 focus:border-white/40 focus:ring-2 focus:ring-white/20"
+              />
+            </div>
+            <div>
+              <label className="text-xs text-white/70">Fett Ziel Max (g)</label>
+              <input
+                type="number"
+                min={0}
+                max={200}
+                value={fatTargetMax}
+                onChange={(e) => setFatTargetMax(e.target.value)}
+                placeholder="z. B. 80"
+                className="mt-1 w-full rounded-xl border border-white/15 bg-zinc-900 px-3 py-2 text-sm text-white placeholder:text-white/30 focus:border-white/40 focus:ring-2 focus:ring-white/20"
+              />
+            </div>
+          </div>
+          <div className="flex flex-wrap items-center gap-3">
+            <button
+              type="submit"
+              disabled={targetsSaving}
+              className="rounded-full bg-white px-6 py-2.5 text-sm font-medium text-zinc-950 hover:bg-white/90 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {targetsSaving ? "Wird gespeichert …" : "Ziele & Makros speichern"}
+            </button>
+            {targetsSaved && (
+              <span className="text-sm text-emerald-400">Gespeichert.</span>
+            )}
+          </div>
+        </form>
+      </section>
 
       {/* Meine Check-ins */}
       <section className="mt-12 border-t border-white/10 pt-10">

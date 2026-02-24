@@ -150,7 +150,7 @@ export async function DELETE() {
   }
 }
 
-/** Nur checkin_reminder_time setzen (für Dashboard "Check-in planen") */
+/** checkin_reminder_time setzen ODER Ziele & Makros (calorie/protein/carbs/fat_target_min/max) */
 export async function PATCH(request: NextRequest) {
   try {
     const { userId } = await auth();
@@ -159,25 +159,43 @@ export async function PATCH(request: NextRequest) {
     }
 
     const body = await request.json();
+    const updatePayload: Record<string, unknown> = { updated_at: new Date().toISOString() };
+
     const time = body.checkin_reminder_time as string | null | undefined;
-    if (time !== null && time !== undefined && typeof time !== 'string') {
-      return NextResponse.json({ error: 'checkin_reminder_time muss ein Zeit-String (HH:MM) oder null sein' }, { status: 400 });
+    if (time !== undefined) {
+      if (time !== null && typeof time !== 'string') {
+        return NextResponse.json({ error: 'checkin_reminder_time muss ein Zeit-String (HH:MM) oder null sein' }, { status: 400 });
+      }
+      updatePayload.checkin_reminder_time = time == null || time === '' ? null : String(time).slice(0, 5);
+    }
+
+    const targetFields = [
+      'calorie_target_min', 'calorie_target_max',
+      'protein_target_min', 'protein_target_max',
+      'carbs_target_min', 'carbs_target_max',
+      'fat_target_min', 'fat_target_max',
+    ] as const;
+    for (const key of targetFields) {
+      if (body[key] !== undefined) {
+        updatePayload[key] = body[key] == null || body[key] === '' ? null : Number(body[key]);
+      }
+    }
+
+    if (Object.keys(updatePayload).length <= 1) {
+      return NextResponse.json({ error: 'Keine Felder zum Aktualisieren' }, { status: 400 });
     }
 
     const { error } = await supabaseAdmin
       .from('profiles')
-      .update({
-        checkin_reminder_time: time == null || time === '' ? null : String(time).slice(0, 5),
-        updated_at: new Date().toISOString(),
-      })
+      .update(updatePayload)
       .eq('id', userId);
 
     if (error) throw error;
     return NextResponse.json({ success: true }, { status: 200 });
   } catch (error) {
-    console.error('❌ API PATCH reminder:', error);
+    console.error('❌ API PATCH:', error);
     return NextResponse.json(
-      { error: 'Fehler beim Speichern der Reminder-Zeit', message: error instanceof Error ? error.message : 'Unbekannter Fehler' },
+      { error: 'Fehler beim Speichern', message: error instanceof Error ? error.message : 'Unbekannter Fehler' },
       { status: 500 }
     );
   }
