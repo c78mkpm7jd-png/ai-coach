@@ -466,8 +466,8 @@ export default function DashboardPage() {
         {/* Tipp des Tages – preview + full per URL an Detailseite */}
         <Card
           href={
-            briefing?.tipOfDay
-              ? `/dashboard/tipp-des-tages?preview=${encodeURIComponent(briefing.tipOfDay.preview)}&full=${encodeURIComponent(briefing.tipOfDay.full)}`
+            briefing?.tipOfDay && typeof briefing.tipOfDay.full === 'string' && briefing.tipOfDay.full.trim()
+              ? `/dashboard/tipp-des-tages?preview=${encodeURIComponent(briefing.tipOfDay.preview ?? '')}&full=${encodeURIComponent(briefing.tipOfDay.full)}`
               : "/dashboard/tipp-des-tages"
           }
           className="hover:border-white/30 hover:shadow-lg hover:shadow-white/5 transition-shadow"
@@ -482,8 +482,8 @@ export default function DashboardPage() {
         {/* Deine Analyse – preview + full per URL an Detailseite */}
         <Card
           href={
-            briefing?.hasCheckins && briefing?.analysis
-              ? `/dashboard/analyse?preview=${encodeURIComponent(briefing.analysis.preview)}&full=${encodeURIComponent(briefing.analysis.full)}`
+            briefing?.hasCheckins && briefing?.analysis && typeof briefing.analysis.full === 'string' && briefing.analysis.full.trim()
+              ? `/dashboard/analyse?preview=${encodeURIComponent(briefing.analysis.preview ?? '')}&full=${encodeURIComponent(briefing.analysis.full)}`
               : "/dashboard/analyse"
           }
           className="hover:border-white/30 hover:shadow-lg hover:shadow-white/5 transition-shadow"

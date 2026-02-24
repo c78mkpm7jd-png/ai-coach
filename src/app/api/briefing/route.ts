@@ -248,7 +248,7 @@ export async function GET(request: Request) {
           .maybeSingle()
         if (cached?.coach_tip_title) {
           coachTipTitle = cached.coach_tip_title
-          coachTipBody = cached.coach_tip_body
+          coachTipBody = cached.coach_tip_body ?? coachTipBody
           if (cached.coach_tip_preview) coachTipPreviewRes = cached.coach_tip_preview
         }
       }
@@ -380,12 +380,17 @@ Antworte NUR mit dem JSON-Objekt (analysisTitle, analysisPreview, analysisBody).
 
     const tipOfDay = {
       preview: coachTipPreviewRes || '',
-      full: coachTipBody,
+      full: typeof coachTipBody === 'string' && coachTipBody.trim() ? coachTipBody : (defaultTip.coachTipBody || ''),
     }
     const analysis =
       hasCheckins && (analysisPreviewRes != null || analysisBody != null)
-        ? { preview: analysisPreviewRes || '', full: analysisBody || '' }
+        ? { preview: analysisPreviewRes || '', full: typeof analysisBody === 'string' && analysisBody.trim() ? analysisBody : '' }
         : null
+
+    if (process.env.NODE_ENV === 'development') {
+      console.log('[briefing] tipOfDay.full length:', tipOfDay.full?.length ?? 0)
+      console.log('[briefing] analysis?.full length:', analysis?.full?.length ?? 0)
+    }
 
     return NextResponse.json({
       macros: {

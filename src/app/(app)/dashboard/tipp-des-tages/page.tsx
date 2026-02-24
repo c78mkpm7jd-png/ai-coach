@@ -11,7 +11,9 @@ export default function TippDesTagesPage() {
     const full = searchParams.get("full");
     if (preview == null || full == null) return null;
     try {
-      return { preview: decodeURIComponent(preview), full: decodeURIComponent(full) };
+      const decodedFull = decodeURIComponent(full);
+      if (!decodedFull || decodedFull === "undefined" || decodedFull === "null") return null;
+      return { preview: decodeURIComponent(preview), full: decodedFull };
     } catch {
       return null;
     }
@@ -23,6 +25,9 @@ export default function TippDesTagesPage() {
 
   useEffect(() => {
     if (fromUrl) {
+      if (process.env.NODE_ENV === "development") {
+        console.log("[tipp-des-tages] fromUrl:", { previewLen: fromUrl.preview?.length, fullLen: fromUrl.full?.length });
+      }
       setData(fromUrl);
       setLoading(false);
       return;
@@ -31,7 +36,20 @@ export default function TippDesTagesPage() {
     fetch("/api/briefing")
       .then((r) => (r.ok ? r.json() : null))
       .then((d) => {
-        if (!cancelled && d?.tipOfDay) setData(d.tipOfDay);
+        if (process.env.NODE_ENV === "development") {
+          console.log("[tipp-des-tages] API response:", {
+            hasTipOfDay: !!d?.tipOfDay,
+            previewLen: d?.tipOfDay?.preview?.length,
+            fullLen: d?.tipOfDay?.full?.length,
+          });
+        }
+        if (!cancelled && d?.tipOfDay) {
+          const tip = d.tipOfDay;
+          setData({
+            preview: tip.preview ?? "",
+            full: typeof tip.full === "string" && tip.full.trim() ? tip.full : "Kein Tipp geladen.",
+          });
+        }
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -89,9 +107,9 @@ export default function TippDesTagesPage() {
         {data?.preview && (
           <p className="mt-3 text-base font-semibold text-white">{data.preview}</p>
         )}
-        <p className="mt-2 text-sm leading-relaxed text-white/80">
-          {data?.full || "Kein Tipp geladen."}
-        </p>
+        <div className="mt-2 text-sm leading-relaxed text-white/80 whitespace-pre-wrap">
+          {data?.full?.trim() ? data.full : "Kein Tipp geladen."}
+        </div>
       </section>
     </div>
   );

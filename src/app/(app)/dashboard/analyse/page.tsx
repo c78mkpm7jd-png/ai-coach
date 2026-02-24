@@ -11,7 +11,9 @@ export default function AnalysePage() {
     const full = searchParams.get("full");
     if (preview == null || full == null) return null;
     try {
-      return { preview: decodeURIComponent(preview), full: decodeURIComponent(full) };
+      const decodedFull = decodeURIComponent(full);
+      if (!decodedFull || decodedFull === "undefined" || decodedFull === "null") return null;
+      return { preview: decodeURIComponent(preview), full: decodedFull };
     } catch {
       return null;
     }
@@ -24,6 +26,9 @@ export default function AnalysePage() {
 
   useEffect(() => {
     if (fromUrl) {
+      if (process.env.NODE_ENV === "development") {
+        console.log("[analyse] fromUrl:", { previewLen: fromUrl.preview?.length, fullLen: fromUrl.full?.length });
+      }
       setData(fromUrl);
       setHasCheckins(true);
       setLoading(false);
@@ -33,9 +38,22 @@ export default function AnalysePage() {
     fetch("/api/briefing")
       .then((r) => (r.ok ? r.json() : null))
       .then((d) => {
+        if (process.env.NODE_ENV === "development") {
+          console.log("[analyse] API response:", {
+            hasAnalysis: !!d?.analysis,
+            previewLen: d?.analysis?.preview?.length,
+            fullLen: d?.analysis?.full?.length,
+          });
+        }
         if (!cancelled) {
           setHasCheckins(!!d?.hasCheckins);
-          if (d?.analysis) setData(d.analysis);
+          if (d?.analysis) {
+            const a = d.analysis;
+            setData({
+              preview: a.preview ?? "",
+              full: typeof a.full === "string" && a.full.trim() ? a.full : "Keine Analyse.",
+            });
+          }
         }
       })
       .finally(() => {
@@ -97,11 +115,11 @@ export default function AnalysePage() {
         {data?.preview && (
           <p className="mt-3 text-base font-semibold text-white">{data.preview}</p>
         )}
-        <p className="mt-2 text-sm leading-relaxed text-white/80">
+        <div className="mt-2 text-sm leading-relaxed text-white/80 whitespace-pre-wrap">
           {hasCheckins
-            ? (data?.full || "Keine Analyse.")
+            ? (data?.full?.trim() ? data.full : "Keine Analyse.")
             : "Erfasse Check-ins für eine datenbasierte Analyse."}
-        </p>
+        </div>
       </section>
     </div>
   );
