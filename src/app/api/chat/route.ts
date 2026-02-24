@@ -14,6 +14,13 @@ import {
   getMacrosSimple,
   type CheckinRow as CoachCheckinRow,
 } from "@/lib/coach";
+import {
+  saveCheckinPartial,
+  getTodayCheckin,
+  isCheckinComplete,
+  getMissingFields,
+  type CheckinRow as PartialCheckinRow,
+} from "@/lib/checkin-partial";
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const supabaseServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
@@ -294,6 +301,74 @@ Jede Erwähnung von Plan/Übungen/Split als "trainingsplan" speichern. Maximal $
       }
     }
 
+    // Check-in-Extraktion: aus Nutzer-Nachricht Gewicht, Makros, Energie/Hunger (1–5) erkennen und speichern
+    let checkinConfirmationBlock = "";
+    if (content && typeof content === "string" && content.trim().length > 0) {
+      try {
+        const extractCheckin = await openai.chat.completions.create({
+          model: "gpt-4o-mini",
+          messages: [
+            {
+              role: "system",
+              content: `Extrahiere aus der Nutzer-Nachricht nur explizit genannte Check-in-Daten. Antworte NUR mit JSON.
+Felder (nur setzen wenn klar erkennbar): weight_kg (Zahl, kg), calories_intake (Zahl, kcal), protein_intake (Zahl, g), carbs_intake (Zahl, g), fat_intake (Zahl, g), energy_level (1–5, Integer), hunger_level (1–5, Integer).
+Beispiele: "83,2 kg" → weight_kg: 83.2. "Energie 4" / "4 von 5 Energie" → energy_level: 4. "2800 kcal" → calories_intake: 2800. "150g Protein" → protein_intake: 150.
+Nur Werte die der Nutzer wirklich nennt. Fehlende Felder weglassen.`,
+            },
+            { role: "user", content: content.trim() },
+          ],
+          response_format: { type: "json_object" },
+          temperature: 0.1,
+        });
+        const rawCheckin = extractCheckin.choices[0]?.message?.content?.trim();
+        if (rawCheckin) {
+          const parsed = JSON.parse(rawCheckin) as Record<string, unknown>;
+          const hasAny =
+            (parsed.weight_kg != null && parsed.weight_kg !== "") ||
+            (parsed.calories_intake != null && parsed.calories_intake !== "") ||
+            (parsed.protein_intake != null && parsed.protein_intake !== "") ||
+            (parsed.carbs_intake != null && parsed.carbs_intake !== "") ||
+            (parsed.fat_intake != null && parsed.fat_intake !== "") ||
+            (parsed.energy_level != null && parsed.energy_level !== "") ||
+            (parsed.hunger_level != null && parsed.hunger_level !== "");
+          if (hasAny) {
+            await saveCheckinPartial(supabaseAdmin, userId, parsed);
+            const todayCheckin = await getTodayCheckin(supabaseAdmin, userId) as PartialCheckinRow | null;
+            const complete = isCheckinComplete(todayCheckin);
+            const missing = todayCheckin ? getMissingFields(todayCheckin) : ["weight_kg", "hunger_level", "energy_level", "trained", "nutrition"];
+            const savedParts: string[] = [];
+            if (parsed.weight_kg != null && parsed.weight_kg !== "") savedParts.push(`${parsed.weight_kg} kg`);
+            if (parsed.calories_intake != null && parsed.calories_intake !== "") savedParts.push(`${parsed.calories_intake} kcal`);
+            if (parsed.protein_intake != null && parsed.protein_intake !== "") savedParts.push(`P ${parsed.protein_intake} g`);
+            if (parsed.carbs_intake != null && parsed.carbs_intake !== "") savedParts.push(`C ${parsed.carbs_intake} g`);
+            if (parsed.fat_intake != null && parsed.fat_intake !== "") savedParts.push(`F ${parsed.fat_intake} g`);
+            if (parsed.energy_level != null && parsed.energy_level !== "") savedParts.push(`Energie ${parsed.energy_level}/5`);
+            if (parsed.hunger_level != null && parsed.hunger_level !== "") savedParts.push(`Hunger ${parsed.hunger_level}/5`);
+            const savedStr = savedParts.length ? savedParts.join(", ") : "–";
+            const missingLabels: string[] = [];
+            if (missing.includes("weight_kg")) missingLabels.push("Gewicht");
+            if (missing.includes("hunger_level") || missing.includes("energy_level")) missingLabels.push("Energie & Hunger (1–5)");
+            if (missing.includes("trained")) missingLabels.push("Training heute (Ja/Nein)");
+            if (missing.includes("nutrition")) missingLabels.push("Kalorien/Makros (falls bekannt)");
+            const missingStr = missingLabels.length ? missingLabels.join(", ") : "–";
+            checkinConfirmationBlock = `
+
+## Check-in-Bestätigung (wichtig)
+Der Nutzer hat gerade Check-in-Daten geschickt. Du hast sie bereits gespeichert.
+- **Notiert:** ${savedStr}
+- **Noch offen:** ${missingStr}
+
+Antworte zuerst freundlich mit einer kurzen Bestätigung (z. B. "Super, ich hab notiert: ${savedStr}."). Ton: WhatsApp, kein Verhör, Lob wenn möglich.
+${complete
+  ? `Der Check-in ist jetzt vollständig. Sage: "Perfekt – dein Check-in ist vollständig! Hier deine Zusammenfassung: [kurz die Daten]. Falls du was anpassen möchtest, kannst du den Check-in jederzeit öffnen 👉"`
+  : `Falls noch Felder offen sind, frage nur kurz danach (${missingStr}). Ein Satz reicht. "Kein Stress, falls du was nicht weißt."`}`;
+          }
+        }
+      } catch (e) {
+        console.warn("Check-in extraction/save failed:", e);
+      }
+    }
+
     // Memories neu laden (inkl. gerade gespeicherte), damit Coach in derselben Antwort darauf eingehen kann
     const coachMemories = await getCoachMemories(supabaseAdmin, userId, 20);
 
@@ -388,6 +463,7 @@ Wenn die Nachricht emotional beginnt aber Daten enthält: Zuerst Emotion validie
 - **Trainingsplan (Bild/PDF/Text):** Bei angehängtem oder beschriebenem Plan: Analysiere Übungen, Muskeln, Struktur (z. B. Push/Pull/Legs) und gib kurze Verbesserungsvorschläge. Wenn du gerade einen Plan verarbeitet hast: Bestätige zuerst "Ich habe deinen Plan gespeichert" und beziehe dich aktiv darauf (z. B. "Laut deinem Plan trainierst du Montag Pull …").
 - **Gedächtnis:** Alle Infos im Abschnitt "Gedächtnis" sind bereits gespeichert. Beziehe dich darauf; frage NIEMALS erneut nach Dingen, die dort stehen (z. B. nicht "Welchen Split machst du?" wenn der Split im Gedächtnis steht).
 - **Strava Aktivitäten des Nutzers:** Wenn im Kontext-Block unten ein Abschnitt "Strava Aktivitäten des Nutzers" steht: Beziehe dich darauf (Trainingsmuster, Belastung, Fortschritt). z. B. "Laut Strava hast du diese Woche …", "Dein Laufpensum …".
+${checkinConfirmationBlock}
 
 ${coachContextBlock}
 

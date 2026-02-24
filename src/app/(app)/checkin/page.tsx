@@ -1,8 +1,24 @@
 "use client";
 
-import { useState, FormEvent } from "react";
+import { useState, useEffect, FormEvent } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+
+type TodayCheckin = {
+  id?: string;
+  created_at?: string;
+  weight_kg?: number | null;
+  hunger_level?: number | null;
+  energy_level?: number | null;
+  trained?: boolean | null;
+  activity_type?: string | null;
+  activity_duration_min?: number | null;
+  activity_calories_burned?: number | null;
+  calories_intake?: number | null;
+  protein_intake?: number | null;
+  carbs_intake?: number | null;
+  fat_intake?: number | null;
+};
 
 export default function CheckinPage() {
   const router = useRouter();
@@ -18,6 +34,7 @@ export default function CheckinPage() {
   const [carbsIntake, setCarbsIntake] = useState("");
   const [fatIntake, setFatIntake] = useState("");
   const [saving, setSaving] = useState(false);
+  const [loading, setLoading] = useState(true);
 
   const ACTIVITY_OPTIONS = [
     { id: "ruhetag", label: "Ruhetag" },
@@ -29,6 +46,28 @@ export default function CheckinPage() {
     { id: "yoga", label: "Yoga" },
   ];
 
+  useEffect(() => {
+    fetch("/api/checkin-chat")
+      .then((res) => res.ok ? res.json() : null)
+      .then((data: { todayCheckin?: TodayCheckin | null } | null) => {
+        const c = data?.todayCheckin;
+        if (!c) return;
+        if (c.weight_kg != null) setWeight(String(c.weight_kg));
+        if (c.hunger_level != null) setHunger(c.hunger_level);
+        if (c.energy_level != null) setEnergy(c.energy_level);
+        if (c.trained != null) setTraining(c.trained ? "ja" : "nein");
+        if (c.activity_type != null) setActivityType(c.activity_type);
+        if (c.activity_duration_min != null) setDurationMin(String(c.activity_duration_min));
+        if (c.activity_calories_burned != null) setCaloriesBurned(String(c.activity_calories_burned));
+        if (c.calories_intake != null) setCaloriesIntake(String(c.calories_intake));
+        if (c.protein_intake != null) setProteinIntake(String(c.protein_intake));
+        if (c.carbs_intake != null) setCarbsIntake(String(c.carbs_intake));
+        if (c.fat_intake != null) setFatIntake(String(c.fat_intake));
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, []);
+
   const canSubmit = !!weight && training !== null;
 
   async function handleSubmit(e: FormEvent) {
@@ -36,14 +75,14 @@ export default function CheckinPage() {
     if (!canSubmit) return;
     setSaving(true);
     try {
-      const res = await fetch("/api/checkin", {
+      const res = await fetch("/api/checkin-chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          weight_kg: parseFloat(weight),
+          weight_kg: weight ? parseFloat(weight) : null,
           hunger_level: hunger,
           energy_level: energy,
-          trained: training,
+          trained: training === "ja",
           activity_type: activityType,
           activity_duration_min: durationMin ? parseInt(durationMin, 10) : null,
           activity_calories_burned: caloriesBurned ? parseInt(caloriesBurned, 10) : null,
@@ -60,6 +99,20 @@ export default function CheckinPage() {
       alert(err instanceof Error ? err.message : "Fehler beim Speichern.");
       setSaving(false);
     }
+  }
+
+  if (loading) {
+    return (
+      <div className="mx-auto flex min-h-full max-w-4xl flex-col justify-center px-4 py-8 sm:px-6 sm:py-16">
+        <div className="mb-8 flex items-center justify-between gap-4 text-sm text-white/60">
+          <Link href="/dashboard" className="hover:text-white/80">
+            ← Zurück zum Dashboard
+          </Link>
+          <span className="text-xs text-white/40">Check-in</span>
+        </div>
+        <p className="text-sm text-white/60">Lade deinen Check-in …</p>
+      </div>
+    );
   }
 
   return (
