@@ -13,8 +13,8 @@ export type VoiceMemoButtonProps = {
   disabled?: boolean;
   /** Container-Ref für das Vorschau-Panel (wird über dem Eingabefeld gerendert) */
   previewContainerRef: React.RefObject<HTMLDivElement | null>;
-  /** Sendet Audio an Chat; Coach antwortet als Text. Nachricht erscheint als Audio-Bubble + Assistant. */
-  onSendVoice: (blob: Blob, durationSec: number) => Promise<void>;
+  /** Sendet Audio an Chat; Coach antwortet als Text. audioUrl = URL.createObjectURL(blob), einmal erzeugen, gleiche URL für Nachricht & Abspielen. */
+  onSendVoice: (blob: Blob, durationSec: number, audioUrl: string) => Promise<void>;
 };
 
 export function VoiceMemoButton({
@@ -118,7 +118,8 @@ export function VoiceMemoButton({
     setSending(true);
     setError(null);
     try {
-      await onSendVoice(blob, durationSec);
+      const audioUrl = URL.createObjectURL(blob);
+      await onSendVoice(blob, durationSec, audioUrl);
       reset();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Fehler beim Senden");

@@ -142,17 +142,16 @@ export default function ChatPage() {
     setAttachedList((prev) => [...prev, ...newItems]);
   }
 
-  /** Sprachnachricht senden: Audio an Chat-API, im Chat als Audio-Bubble + Coach-Antwort (kein Transkript sichtbar). */
+  /** Sprachnachricht senden: Audio an Chat-API. audioUrl von VoiceMemoButton (einmal createObjectURL), gleiche URL für Audio-Bubble. */
   const handleSendVoiceMemo = useCallback(
-    async (blob: Blob, durationSec: number) => {
+    async (blob: Blob, durationSec: number, audioUrl: string) => {
       if (loading) return;
-      const voiceBlobUrl = URL.createObjectURL(blob);
       const userMsg: ChatMessage = {
         id: `temp-${Date.now()}`,
         role: "user",
         content: "",
         created_at: new Date().toISOString(),
-        voiceBlobUrl,
+        voiceBlobUrl: audioUrl,
         voiceDurationSec: durationSec,
       };
       setMessages((prev) => [...prev, userMsg]);
