@@ -89,7 +89,7 @@ export async function GET() {
 
     const { data, error } = await supabaseAdmin
       .from("chat_messages")
-      .select("id, role, content, created_at")
+      .select("id, role, content, created_at, voice_duration_sec")
       .eq("user_id", userId)
       .order("created_at", { ascending: true });
 
@@ -106,6 +106,7 @@ export async function GET() {
       role: m.role as "user" | "assistant",
       content: m.content,
       created_at: m.created_at,
+      ...(m.voice_duration_sec != null && { voiceDurationSec: m.voice_duration_sec }),
     }));
 
     return NextResponse.json({ messages }, { status: 200 });
@@ -141,11 +142,35 @@ export async function POST(request: NextRequest) {
     let attachedPdfText: string | null = null;
     const attachedImages: { base64: string; mime: string }[] = [];
     let contentForDb = "";
+    let voiceDurationSec: number | null = null;
+    let noPersist = false;
 
     if (contentType.includes("multipart/form-data")) {
       const formData = await request.formData();
       const textPart = formData.get("content");
       content = typeof textPart === "string" ? textPart.trim() : "";
+
+      // Sprachnachricht: nur für Coach-Kontext transkribieren, im Chat als Audio-Bubble anzeigen
+      const voiceFile = formData.get("voice");
+      if (voiceFile instanceof File && voiceFile.size > 0 && voiceFile.type.startsWith("audio/")) {
+        const openai = new OpenAI({ apiKey: openaiKey });
+        const transcription = await openai.audio.transcriptions.create({
+          file: voiceFile,
+          model: "whisper-1",
+          language: "de",
+        });
+        content = typeof transcription.text === "string" ? transcription.text.trim() : "";
+        contentForDb = content || " [Sprachnachricht]";
+        const d = formData.get("voiceDurationSec");
+        voiceDurationSec = d != null && d !== "" ? parseInt(String(d), 10) : null;
+        if (!content) {
+          return NextResponse.json(
+            { error: "Keine Sprache in der Sprachnachricht erkannt" },
+            { status: 400 }
+          );
+        }
+      }
+
       const files = formData.getAll("file").filter((f): f is File => f instanceof File && f.size > 0);
       const imageNames: string[] = [];
       const pdfNames: string[] = [];
@@ -188,6 +213,7 @@ export async function POST(request: NextRequest) {
         );
       }
       contentForDb = content;
+      noPersist = body.noPersist === true;
     }
 
     const contentForExtraction = attachedPdfText
@@ -668,18 +694,21 @@ Antworte ausschließlich mit einem JSON-Objekt (kein anderer Text):
       }
     }
 
-    const [insertUser, insertAssistant] = await Promise.all([
-      supabaseAdmin.from("chat_messages").insert({
-        user_id: userId,
-        role: "user",
-        content: contentForDb,
-      }).select("id, created_at").single(),
-      supabaseAdmin.from("chat_messages").insert({
-        user_id: userId,
-        role: "assistant",
-        content: text,
-      }).select("id, created_at").single(),
-    ]);
+    const [insertUser, insertAssistant] = noPersist
+      ? [{ data: { id: undefined, created_at: new Date().toISOString() }, error: null }, { data: { id: undefined, created_at: new Date().toISOString() }, error: null }]
+      : await Promise.all([
+          supabaseAdmin.from("chat_messages").insert({
+            user_id: userId,
+            role: "user",
+            content: contentForDb,
+            ...(voiceDurationSec != null && { voice_duration_sec: voiceDurationSec }),
+          }).select("id, created_at").single(),
+          supabaseAdmin.from("chat_messages").insert({
+            user_id: userId,
+            role: "assistant",
+            content: text,
+          }).select("id, created_at").single(),
+        ]);
 
     if (insertUser.error || insertAssistant.error) {
       console.error("❌ chat_messages insert:", insertUser.error || insertAssistant.error);

@@ -38,6 +38,7 @@ type Profile = {
   carbs_target_max?: number | null;
   fat_target_min?: number | null;
   fat_target_max?: number | null;
+  coach_voice?: string | null;
 };
 
 type Checkin = {
@@ -96,6 +97,8 @@ export default function ProfilPage() {
   const [targetsSaved, setTargetsSaved] = useState(false);
   const [targetsCalculating, setTargetsCalculating] = useState(false);
   const [targetsExplanation, setTargetsExplanation] = useState<string | null>(null);
+  const [coachVoice, setCoachVoice] = useState<"onyx" | "nova">("onyx");
+  const [coachVoiceSaving, setCoachVoiceSaving] = useState(false);
 
   function loadCheckins() {
     if (!user) return;
@@ -129,6 +132,7 @@ export default function ProfilPage() {
           setCarbsTargetMax(p.carbs_target_max != null ? String(p.carbs_target_max) : "");
           setFatTargetMin(p.fat_target_min != null ? String(p.fat_target_min) : "");
           setFatTargetMax(p.fat_target_max != null ? String(p.fat_target_max) : "");
+          setCoachVoice(p.coach_voice === "nova" ? "nova" : "onyx");
         }
       })
       .catch(() => {})
@@ -427,6 +431,49 @@ export default function ProfilPage() {
           </button>
         </div>
       </form>
+
+      {/* Coach Stimme (TTS) */}
+      <section className="mt-12 border-t border-white/10 pt-10">
+        <h2 className="text-lg font-semibold text-white/90 mb-2">Coach Stimme</h2>
+        <p className="text-sm text-white/60 mb-4">
+          Stimme für die Sprachausgabe im Voice-Coach-Modus (Chat).
+        </p>
+        <div className="flex flex-wrap gap-2">
+          {[
+            { id: "onyx" as const, label: "Männlich (Onyx)" },
+            { id: "nova" as const, label: "Weiblich (Nova)" },
+          ].map((o) => (
+            <button
+              key={o.id}
+              type="button"
+              disabled={coachVoiceSaving}
+              onClick={async () => {
+                setCoachVoice(o.id);
+                setCoachVoiceSaving(true);
+                try {
+                  const res = await fetch("/api/profile", {
+                    method: "PATCH",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ coach_voice: o.id }),
+                  });
+                  if (!res.ok) throw new Error("Speichern fehlgeschlagen");
+                } catch {
+                  setCoachVoice(coachVoice);
+                } finally {
+                  setCoachVoiceSaving(false);
+                }
+              }}
+              className={`rounded-full border px-4 py-2 text-sm font-medium transition ${
+                coachVoice === o.id
+                  ? "border-white bg-white text-zinc-950"
+                  : "border-white/15 bg-zinc-900 text-white/85 hover:border-white/40"
+              } disabled:opacity-50`}
+            >
+              {o.label}
+            </button>
+          ))}
+        </div>
+      </section>
 
       {/* Ziele & Makros */}
       <section className="mt-12 border-t border-white/10 pt-10">

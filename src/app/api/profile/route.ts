@@ -44,6 +44,7 @@ async function upsertProfile(userId: string, body: Record<string, unknown>) {
   if (body.carbs_target_max !== undefined) payload.carbs_target_max = body.carbs_target_max == null ? null : Number(body.carbs_target_max);
   if (body.fat_target_min !== undefined) payload.fat_target_min = body.fat_target_min == null ? null : Number(body.fat_target_min);
   if (body.fat_target_max !== undefined) payload.fat_target_max = body.fat_target_max == null ? null : Number(body.fat_target_max);
+  if (body.coach_voice !== undefined) payload.coach_voice = body.coach_voice == null || body.coach_voice === '' ? 'onyx' : String(body.coach_voice);
   const { data, error } = await supabaseAdmin
     .from('profiles')
     .upsert(payload, { onConflict: 'id' });
@@ -174,10 +175,15 @@ export async function PATCH(request: NextRequest) {
       'protein_target_min', 'protein_target_max',
       'carbs_target_min', 'carbs_target_max',
       'fat_target_min', 'fat_target_max',
+      'coach_voice',
     ] as const;
     for (const key of targetFields) {
       if (body[key] !== undefined) {
-        updatePayload[key] = body[key] == null || body[key] === '' ? null : Number(body[key]);
+        if (key === 'coach_voice') {
+          updatePayload[key] = body[key] == null || body[key] === '' ? 'onyx' : String(body[key]);
+        } else {
+          updatePayload[key] = body[key] == null || body[key] === '' ? null : Number(body[key]);
+        }
       }
     }
 

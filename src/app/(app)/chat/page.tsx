@@ -2,6 +2,10 @@
 
 import { useState, useEffect, useRef, FormEvent, useCallback } from "react";
 import MessageChart, { type ChartPayload } from "@/components/chat/MessageChart";
+import { AudioBubble } from "@/components/chat/AudioBubble";
+import { VoiceMemoButton } from "@/components/chat/VoiceMemoButton";
+import { VoiceCoachButton } from "@/components/chat/VoiceCoachButton";
+import { VoiceCoachModal } from "@/components/chat/VoiceCoachModal";
 import { useSidebar } from "@/components/layout/SidebarContext";
 
 function isImage(file: File) {
@@ -16,6 +20,9 @@ type ChatMessage = {
   chart?: ChartPayload;
   /** Blob-URLs für gesendete Bilder (nur aktuelle Session) */
   attachedImageUrls?: string[];
+  /** Sprachnachricht: Blob-URL nur in aktueller Session; Dauer immer aus API/State */
+  voiceBlobUrl?: string | null;
+  voiceDurationSec?: number;
 };
 
 type AttachedItem = { file: File; previewUrl: string | null };
@@ -32,6 +39,9 @@ export default function ChatPage() {
   const lightboxTouchStart = useRef<number | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const [coachVoice, setCoachVoice] = useState<string>("onyx");
+  const [voiceCoachOpen, setVoiceCoachOpen] = useState(false);
+  const voicePreviewContainerRef = useRef<HTMLDivElement>(null);
 
   const allowedTypes = "image/*,application/pdf";
   const isLightboxOpen = lightboxImages.length > 0;
@@ -53,13 +63,24 @@ export default function ChatPage() {
   useEffect(() => {
     const loadChatAndCheckin = async () => {
       try {
-        const [chatRes, checkinRes] = await Promise.all([
+        const [chatRes, checkinRes, profileRes] = await Promise.all([
           fetch("/api/chat"),
           fetch("/api/checkin-chat"),
+          fetch("/api/profile"),
         ]);
         const chatData = chatRes.ok ? await chatRes.json() : {};
         const checkinData = checkinRes.ok ? await checkinRes.json() : {};
-        const history: ChatMessage[] = chatData.messages ?? [];
+        const profileData = profileRes.ok ? await profileRes.json() : {};
+        if (profileData?.data?.coach_voice) {
+          setCoachVoice(String(profileData.data.coach_voice));
+        }
+        const history: ChatMessage[] = (chatData.messages ?? []).map((m: { id: string; role: string; content: string; created_at: string; voiceDurationSec?: number }) => ({
+          id: m.id,
+          role: m.role as "user" | "assistant",
+          content: m.content,
+          created_at: m.created_at,
+          ...(m.voiceDurationSec != null && { voiceDurationSec: m.voiceDurationSec }),
+        }));
         const suggestedMessage: string | null = checkinData.suggestedMessage ?? null;
 
         if (suggestedMessage?.trim()) {
@@ -120,6 +141,62 @@ export default function ChatPage() {
       }));
     setAttachedList((prev) => [...prev, ...newItems]);
   }
+
+  /** Sprachnachricht senden: Audio an Chat-API, im Chat als Audio-Bubble + Coach-Antwort (kein Transkript sichtbar). */
+  const handleSendVoiceMemo = useCallback(
+    async (blob: Blob, durationSec: number) => {
+      if (loading) return;
+      const voiceBlobUrl = URL.createObjectURL(blob);
+      const userMsg: ChatMessage = {
+        id: `temp-${Date.now()}`,
+        role: "user",
+        content: "",
+        created_at: new Date().toISOString(),
+        voiceBlobUrl,
+        voiceDurationSec: durationSec,
+      };
+      setMessages((prev) => [...prev, userMsg]);
+      setLoading(true);
+      try {
+        const formData = new FormData();
+        formData.append("voice", blob, "recording.webm");
+        formData.append("voiceDurationSec", String(durationSec));
+        const res = await fetch("/api/chat", { method: "POST", body: formData });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || "Fehler beim Senden");
+        const assistantContent = data.message && typeof data.message.content === "string" ? data.message.content : "";
+        const chartObj = data.message?.chart;
+        const msg: ChatMessage = {
+          id: data.message?.id ?? `msg-${Date.now()}`,
+          role: "assistant",
+          content: assistantContent,
+          created_at: data.message?.created_at ?? new Date().toISOString(),
+        };
+        if (chartObj && typeof chartObj === "object" && Array.isArray(chartObj.data) && chartObj.data.length > 0) {
+          const allowed: Array<ChartPayload["type"]> = ["weight", "calories", "activity", "energy_hunger", "pie"];
+          msg.chart = {
+            type: allowed.includes(chartObj.type) ? chartObj.type : "calories",
+            title: chartObj.title ?? null,
+            data: chartObj.data,
+          } as ChartPayload;
+        }
+        setMessages((prev) => [...prev, msg]);
+      } catch (err) {
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: `err-${Date.now()}`,
+            role: "assistant",
+            content: err instanceof Error ? err.message : "Der Coach konnte nicht antworten.",
+            created_at: new Date().toISOString(),
+          },
+        ]);
+      } finally {
+        setLoading(false);
+      }
+    },
+    [loading]
+  );
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -258,6 +335,12 @@ export default function ChatPage() {
                         : "bg-white/10 text-white border border-white/10 rounded-bl-md"
                     }`}
                   >
+                    {isUser && (m.voiceDurationSec != null || m.voiceBlobUrl) ? (
+                      <AudioBubble
+                        src={m.voiceBlobUrl ?? undefined}
+                        durationSec={m.voiceDurationSec ?? 0}
+                      />
+                    ) : null}
                     {isUser && m.attachedImageUrls && m.attachedImageUrls.length > 0 && (
                       <div className="mb-2 grid max-w-[208px] grid-cols-2 gap-1 sm:max-w-[408px]">
                         {m.attachedImageUrls.map((url, i) => (
@@ -275,7 +358,10 @@ export default function ChatPage() {
                         ))}
                       </div>
                     )}
-                    {m.content ? <p className="whitespace-pre-wrap break-words">{m.content}</p> : null}
+                    {!isUser && m.content ? <p className="whitespace-pre-wrap break-words">{m.content}</p> : null}
+                    {isUser && !(m.voiceDurationSec != null || m.voiceBlobUrl) && m.content ? (
+                      <p className="whitespace-pre-wrap break-words">{m.content}</p>
+                    ) : null}
                     {!isUser && m.chart && <MessageChart chart={m.chart} />}
                   </div>
                 </div>
@@ -298,6 +384,7 @@ export default function ChatPage() {
         className="fixed inset-x-0 bottom-0 z-10 border-t border-white/10 bg-zinc-950 p-3 md:static md:z-auto md:shrink-0"
         style={{ paddingBottom: "calc(0.75rem + env(safe-area-inset-bottom))" }}
       >
+        <div ref={voicePreviewContainerRef} className="min-h-0" aria-live="polite" />
         {attachedList.length > 0 && (
           <div className="mb-2 flex flex-wrap gap-2">
             {attachedList.map((item, index) => (
@@ -326,7 +413,7 @@ export default function ChatPage() {
             ))}
           </div>
         )}
-        <div className="flex gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <input
             ref={fileInputRef}
             type="file"
@@ -357,6 +444,12 @@ export default function ChatPage() {
             className="min-w-0 flex-1 rounded-xl border border-white/15 bg-zinc-900 px-4 py-2.5 text-base text-white placeholder:text-white/40 focus:border-white/40 focus:outline-none focus:ring-2 focus:ring-white/20 disabled:opacity-60 md:text-sm"
             style={{ fontSize: "16px" }}
           />
+          <VoiceMemoButton
+            disabled={loading}
+            previewContainerRef={voicePreviewContainerRef}
+            onSendVoice={handleSendVoiceMemo}
+          />
+          <VoiceCoachButton disabled={loading} onOpenModal={() => setVoiceCoachOpen(true)} />
           <button
             type="submit"
             disabled={(!input.trim() && attachedList.length === 0) || loading}
@@ -367,6 +460,12 @@ export default function ChatPage() {
         </div>
         <p className="mt-1.5 text-xs text-white/40">Mehrere JPG/PNG oder PDF (max. {maxFileSizeMb} MB)</p>
       </form>
+
+      <VoiceCoachModal
+        open={voiceCoachOpen}
+        onClose={() => setVoiceCoachOpen(false)}
+        coachVoice={coachVoice}
+      />
 
       {/* Lightbox: dunkler Hintergrund, X schließen, Swipe zwischen Bildern */}
       {isLightboxOpen && lightboxCurrent && (
