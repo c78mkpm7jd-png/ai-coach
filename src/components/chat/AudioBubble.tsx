@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 
 function formatDuration(seconds: number): string {
   const m = Math.floor(seconds / 60);
@@ -17,49 +17,70 @@ export type AudioBubbleProps = {
 
 export function AudioBubble({ src, durationSec, className = "" }: AudioBubbleProps) {
   const [isPlaying, setIsPlaying] = useState(false);
-  const [progress, setProgress] = useState(0);
+  const [currentTime, setCurrentTime] = useState(0);
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
   const canPlay = !!src;
+  const progress = durationSec > 0 ? Math.min(100, (currentTime / durationSec) * 100) : 0;
+
+  const stopAudio = useCallback(() => {
+    const audio = audioRef.current;
+    if (audio) {
+      audio.pause();
+      audio.currentTime = 0;
+      audioRef.current = null;
+    }
+    setIsPlaying(false);
+    setCurrentTime(0);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      const audio = audioRef.current;
+      if (audio) {
+        audio.pause();
+        audio.src = "";
+        audioRef.current = null;
+      }
+    };
+  }, []);
 
   useEffect(() => {
     if (!src) return;
-    const audio = new Audio(src);
-    audioRef.current = audio;
-    const onTimeUpdate = () => {
-      if (audio.duration && Number.isFinite(audio.duration)) {
-        setProgress((audio.currentTime / audio.duration) * 100);
-      }
-    };
-    const onEnded = () => {
-      setIsPlaying(false);
-      setProgress(0);
-    };
-    const onPlay = () => setIsPlaying(true);
-    const onPause = () => setIsPlaying(false);
-    audio.addEventListener("timeupdate", onTimeUpdate);
-    audio.addEventListener("ended", onEnded);
-    audio.addEventListener("play", onPlay);
-    audio.addEventListener("pause", onPause);
-    return () => {
-      audio.removeEventListener("timeupdate", onTimeUpdate);
-      audio.removeEventListener("ended", onEnded);
-      audio.removeEventListener("play", onPlay);
-      audio.removeEventListener("pause", onPause);
-      audio.pause();
-      audioRef.current = null;
-    };
-  }, [src]);
+    stopAudio();
+  }, [src, stopAudio]);
 
-  const togglePlay = () => {
-    const audio = audioRef.current;
-    if (!audio) return;
+  const togglePlay = useCallback(() => {
+    if (!src) return;
+
+    let audio = audioRef.current;
+    if (!audio) {
+      audio = new Audio(src);
+      audioRef.current = audio;
+
+      audio.addEventListener("timeupdate", () => {
+        setCurrentTime(audio!.currentTime);
+      });
+      audio.addEventListener("ended", () => {
+        setIsPlaying(false);
+        setCurrentTime(0);
+      });
+      audio.addEventListener("play", () => setIsPlaying(true));
+      audio.addEventListener("pause", () => setIsPlaying(false));
+      audio.addEventListener("error", () => {
+        setIsPlaying(false);
+        setCurrentTime(0);
+      });
+    }
+
     if (isPlaying) {
       audio.pause();
     } else {
-      audio.play().catch(() => {});
+      audio.play().catch(() => {
+        setIsPlaying(false);
+      });
     }
-  };
+  }, [src, isPlaying]);
 
   return (
     <div
@@ -98,12 +119,12 @@ export function AudioBubble({ src, durationSec, className = "" }: AudioBubblePro
         <div className="h-1.5 w-full overflow-hidden rounded-full bg-white/20">
           <div
             className="h-full rounded-full bg-white/70 transition-all duration-150"
-            style={{ width: canPlay ? `${progress}%` : "0%" }}
+            style={{ width: `${progress}%` }}
           />
         </div>
         <p className="mt-1 text-xs font-medium tabular-nums text-white/80">
           {canPlay && isPlaying
-            ? `${formatDuration((progress / 100) * durationSec)} / ${formatDuration(durationSec)}`
+            ? `${formatDuration(currentTime)} / ${formatDuration(durationSec)}`
             : formatDuration(durationSec)}
         </p>
       </div>
