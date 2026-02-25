@@ -10,8 +10,8 @@ import {
   getCoachMemories,
   getStravaSummaryForCoach,
   estimateTdee,
-  getTargetCaloriesFromTdee,
   getMacrosSimple,
+  getTargetRangeFromProfile,
   type CheckinRow as CoachCheckinRow,
 } from "@/lib/coach";
 import {
@@ -21,7 +21,6 @@ import {
   getMissingFields,
   type CheckinRow as PartialCheckinRow,
 } from "@/lib/checkin-partial";
-import { getTargetRangeFromProfile } from "@/lib/coach";
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const supabaseServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
@@ -59,6 +58,10 @@ type ProfileRow = {
   calorie_target_max?: number | null;
   protein_target_min?: number | null;
   protein_target_max?: number | null;
+  carbs_target_min?: number | null;
+  carbs_target_max?: number | null;
+  fat_target_min?: number | null;
+  fat_target_max?: number | null;
 };
 
 type CheckinRow = {
@@ -215,7 +218,7 @@ export async function POST(request: NextRequest) {
     const checkins = (checkinsRes.data ?? []) as CheckinRow[];
     const existingMessages = (messagesRes.data ?? []) as { role: string; content: string }[];
 
-    // Bestehende Nutzer: Kalorien-/Proteinziel still setzen, wenn noch nicht vorhanden
+    // Bestehende Nutzer: Kalorien-/Protein-/Carbs-/Fett-Ziel still setzen, wenn noch nicht vorhanden
     if (
       profile &&
       (profile.calorie_target_min == null || profile.calorie_target_max == null) &&
@@ -239,6 +242,10 @@ export async function POST(request: NextRequest) {
           calorie_target_max: range.calorie_target_max,
           protein_target_min: range.protein_target_min,
           protein_target_max: range.protein_target_max,
+          carbs_target_min: range.carbs_target_min,
+          carbs_target_max: range.carbs_target_max,
+          fat_target_min: range.fat_target_min,
+          fat_target_max: range.fat_target_max,
           updated_at: new Date().toISOString(),
         })
         .eq("id", userId);
@@ -416,12 +423,35 @@ ${complete
     const latestBurn = checkinsWithBurn.find(
       (c) => typeof c.activity_calories_burned === "number" && c.activity_calories_burned > 0
     );
-    const tdee =
+    const caloriesBurned =
       latestBurn != null
         ? Math.round(Number(latestBurn.activity_calories_burned))
         : estimateTdee(weight, height, age, gender === "w", activityLevel);
-    const targetCalories = getTargetCaloriesFromTdee(tdee, String(profile?.goal ?? "maintain"));
-    const macros = getMacrosSimple(targetCalories, weight, String(profile?.goal ?? "maintain"));
+
+    // Kalorien-ZIEL aus Profil (Ess-Ziel), nicht aus Verbrauch (TDEE)
+    const rangeForFallback =
+      profile?.calorie_target_min != null && profile?.calorie_target_max != null
+        ? null
+        : profile?.weight != null &&
+            profile?.height != null &&
+            profile?.age != null &&
+            profile?.goal != null
+          ? getTargetRangeFromProfile({
+              weightKg: Number(profile.weight),
+              heightCm: Number(profile.height),
+              age: Number(profile.age),
+              isFemale: String(profile.gender) === "w",
+              activityLevel: String(profile.activity_level ?? "sitzend"),
+              goal: String(profile.goal),
+            })
+          : null;
+    const targetCaloriesFromProfile =
+      profile?.calorie_target_min != null && profile?.calorie_target_max != null
+        ? Math.round((profile.calorie_target_min + profile.calorie_target_max) / 2)
+        : rangeForFallback
+          ? Math.round((rangeForFallback.calorie_target_min + rangeForFallback.calorie_target_max) / 2)
+          : 2000;
+    const macros = getMacrosSimple(targetCaloriesFromProfile, weight, String(profile?.goal ?? "maintain"));
 
     const profileForCoach = {
       goal: profile?.goal,
@@ -432,10 +462,14 @@ ${complete
       calorie_target_max: profile?.calorie_target_max ?? null,
       protein_target_min: profile?.protein_target_min ?? null,
       protein_target_max: profile?.protein_target_max ?? null,
+      carbs_target_min: profile?.carbs_target_min ?? null,
+      carbs_target_max: profile?.carbs_target_max ?? null,
+      fat_target_min: profile?.fat_target_min ?? null,
+      fat_target_max: profile?.fat_target_max ?? null,
     };
-    const coachCtx = getCoachContext(profileForCoach, targetCalories, macros);
+    const coachCtx = getCoachContext(profileForCoach, targetCaloriesFromProfile, macros);
     const coachCheckins = checkins.map((c) => ({ ...c })) as CoachCheckinRow[];
-    const coachSignals = analyzeSignals(coachCheckins, coachCtx, tdee);
+    const coachSignals = analyzeSignals(coachCheckins, coachCtx, { caloriesBurned });
 
     const checkinsSummary = checkins
       .map((c) => {

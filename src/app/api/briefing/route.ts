@@ -35,18 +35,19 @@ const activityMultiplier: Record<string, number> = {
   aktiv: 1.55,
 }
 
-// TDEE und Ziel-Kalorien je nach Ziel: Bulk +300, Cut -400, Recomp/Maintain = TDEE
-function getTargetCalories(tdee: number, goal: string): number {
-  switch (goal) {
-    case 'lean-bulk':
-      return Math.round(tdee + 300)
-    case 'cut':
-      return Math.round(tdee - 400)
-    case 'recomp':
-    case 'maintain':
-    default:
-      return Math.round(tdee)
+// Kalorien-ZIEL aus Profil (calorie_target_min/max) oder aus berechnetem Bereich – NICHT aus TDEE.
+// TDEE (Verbrauch) wird nur als Vergleichswert für Defizit/Überschuss genutzt.
+function getTargetCaloriesFromProfile(profile: {
+  calorie_target_min?: number | null
+  calorie_target_max?: number | null
+}, range?: { calorie_target_min: number; calorie_target_max: number }): number {
+  if (profile.calorie_target_min != null && profile.calorie_target_max != null) {
+    return Math.round((profile.calorie_target_min + profile.calorie_target_max) / 2)
   }
+  if (range) {
+    return Math.round((range.calorie_target_min + range.calorie_target_max) / 2)
+  }
+  return 0
 }
 
 // Makros: Protein je nach Krafttraining erhöht, mehr Carbs nach Ausdauer, Fett ~0.9g/kg
@@ -116,7 +117,7 @@ export async function GET(request: Request) {
       )
     }
 
-    // Bestehende Nutzer: Kalorien-/Proteinziel still im Hintergrund setzen, wenn noch nicht vorhanden
+    // Bestehende Nutzer: Kalorien-/Protein-/Carbs-/Fett-Ziel still setzen, wenn noch nicht vorhanden
     if (
       (profile.calorie_target_min == null || profile.calorie_target_max == null) &&
       profile.weight != null &&
@@ -139,6 +140,10 @@ export async function GET(request: Request) {
           calorie_target_max: range.calorie_target_max,
           protein_target_min: range.protein_target_min,
           protein_target_max: range.protein_target_max,
+          carbs_target_min: range.carbs_target_min,
+          carbs_target_max: range.carbs_target_max,
+          fat_target_min: range.fat_target_min,
+          fat_target_max: range.fat_target_max,
           updated_at: new Date().toISOString(),
         })
         .eq('id', userId)
@@ -152,20 +157,37 @@ export async function GET(request: Request) {
     const activityLevel = String(profile.activity_level || 'sitzend')
     const goal = String(profile.goal || 'maintain')
 
-    // TDEE: Wenn Gesamtverbrauch in einem Check-in eingetragen wurde, diesen direkt als TDEE nutzen (kein Profil-TDEE); sonst aus Profil berechnen
+    // Kalorien-ZIEL aus Profil (Ess-Ziel), nicht aus Verbrauch
+    const rangeForFallback =
+      profile.calorie_target_min != null && profile.calorie_target_max != null
+        ? null
+        : getTargetRangeFromProfile({
+            weightKg: weight,
+            heightCm: height,
+            age,
+            isFemale: gender === 'w',
+            activityLevel,
+            goal,
+          })
+    const targetCalories = getTargetCaloriesFromProfile(profile, rangeForFallback ?? undefined)
+    const effectiveTargetCalories =
+      targetCalories > 0
+        ? targetCalories
+        : rangeForFallback
+          ? Math.round((rangeForFallback.calorie_target_min + rangeForFallback.calorie_target_max) / 2)
+          : 2000
+
+    // Verbrauch (TDEE): aus Check-in (activity_calories_burned) oder aus Profil geschätzt – NUR für Vergleich Defizit/Überschuss
     const checkinsWithBurn = checkins as { activity_calories_burned?: number | null }[]
     const latestBurn = checkinsWithBurn.find((c) => typeof c.activity_calories_burned === 'number' && c.activity_calories_burned > 0)
-    const hasGarminTdee = latestBurn != null
-    const tdee = hasGarminTdee
-      ? Math.round(Number(latestBurn.activity_calories_burned))
-      : (() => {
-          const bmrVal = bmr(weight, height, age, gender === 'w')
-          const multiplier = activityMultiplier[activityLevel] ?? 1.2
-          return Math.round(bmrVal * multiplier)
-        })()
-
-    // Ziel-Kalorien: Bulk/Cut/Recomp auf TDEE addieren oder subtrahieren
-    const targetCalories = getTargetCalories(tdee, goal)
+    const caloriesBurnedForComparison =
+      latestBurn != null
+        ? Math.round(Number(latestBurn.activity_calories_burned))
+        : (() => {
+            const bmrVal = bmr(weight, height, age, gender === 'w')
+            const multiplier = activityMultiplier[activityLevel] ?? 1.2
+            return Math.round(bmrVal * multiplier)
+          })()
 
     // Letzte Aktivität: mehr Protein nach Krafttraining, mehr Carbs nach langer Ausdauer
     const lastWithActivity = (checkins as { activity_type?: string; activity_duration_min?: number | null }[]).find(
@@ -178,7 +200,7 @@ export async function GET(request: Request) {
       cardioTypes.includes(String(lastWithActivity.activity_type)) &&
       (lastWithActivity.activity_duration_min ?? 0) >= 45
 
-    const macros = getMacros(targetCalories, weight, goal, {
+    const macros = getMacros(effectiveTargetCalories, weight, goal, {
       recentWasStrength,
       recentWasLongCardio,
     })
@@ -313,8 +335,12 @@ Deine Antwort muss valides JSON sein mit exakt diesen Feldern (kein anderer Text
         calorie_target_max: profile.calorie_target_max ?? null,
         protein_target_min: profile.protein_target_min ?? null,
         protein_target_max: profile.protein_target_max ?? null,
+        carbs_target_min: profile.carbs_target_min ?? null,
+        carbs_target_max: profile.carbs_target_max ?? null,
+        fat_target_min: profile.fat_target_min ?? null,
+        fat_target_max: profile.fat_target_max ?? null,
       }
-      const coachCtx = getCoachContext(profileForCoach, targetCalories, {
+      const coachCtx = getCoachContext(profileForCoach, effectiveTargetCalories, {
         ...macros,
         calories: macros.calories,
       })
@@ -332,7 +358,7 @@ Deine Antwort muss valides JSON sein mit exakt diesen Feldern (kein anderer Text
         carbs_intake: c.carbs_intake,
         fat_intake: c.fat_intake,
       })) as CoachCheckinRow[]
-      const coachSignals = analyzeSignals(coachCheckins, coachCtx, tdee)
+      const coachSignals = analyzeSignals(coachCheckins, coachCtx, { caloriesBurned: caloriesBurnedForComparison })
       const analysisInstructions = buildAnalysisInstructions(
         coachCtx,
         coachSignals,
