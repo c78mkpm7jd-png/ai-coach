@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect, useCallback } from "react";
 
+/** Anzeige im Format "0:23" */
 function formatDuration(seconds: number): string {
   const m = Math.floor(seconds / 60);
   const s = Math.floor(seconds % 60);
@@ -9,25 +10,37 @@ function formatDuration(seconds: number): string {
 }
 
 export type AudioBubbleProps = {
-  /** Blob-URL zum Abspielen (nur aktuelle Session); fehlt bei geladener Historie */
+  /** Audio als Base64 (persistent), für data-URL beim Abspielen */
+  audioBase64?: string | null;
+  /** Legacy: Blob-URL falls keine Base64 */
   src?: string | null;
+  /** Dauer in Sekunden (während Aufnahme gemessen) */
   durationSec: number;
   className?: string;
 };
 
-export function AudioBubble({ src, durationSec, className = "" }: AudioBubbleProps) {
+const AUDIO_MIME = "audio/webm";
+
+export function AudioBubble({ audioBase64, src, durationSec, className = "" }: AudioBubbleProps) {
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
+  const [duration, setDuration] = useState(durationSec);
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const progressBarRef = useRef<HTMLDivElement | null>(null);
 
-  const canPlay = !!src;
-  const progress = durationSec > 0 ? Math.min(100, (currentTime / durationSec) * 100) : 0;
+  const playUrl = audioBase64
+    ? `data:${AUDIO_MIME};base64,${audioBase64}`
+    : src || null;
+  const canPlay = !!playUrl;
+  const totalSec = Number.isFinite(duration) && duration > 0 ? duration : durationSec;
+  const progress = totalSec > 0 ? Math.min(100, (currentTime / totalSec) * 100) : 0;
 
   const stopAudio = useCallback(() => {
     const audio = audioRef.current;
     if (audio) {
       audio.pause();
       audio.currentTime = 0;
+      audio.src = "";
       audioRef.current = null;
     }
     setIsPlaying(false);
@@ -46,20 +59,23 @@ export function AudioBubble({ src, durationSec, className = "" }: AudioBubblePro
   }, []);
 
   useEffect(() => {
-    if (!src) return;
+    if (!playUrl) return;
     stopAudio();
-  }, [src, stopAudio]);
+  }, [playUrl, stopAudio]);
 
   const togglePlay = useCallback(() => {
-    if (!src) return;
+    if (!playUrl) return;
 
     let audio = audioRef.current;
     if (!audio) {
-      audio = new Audio(src);
+      audio = new Audio(playUrl);
       audioRef.current = audio;
 
       audio.addEventListener("timeupdate", () => {
         setCurrentTime(audio!.currentTime);
+      });
+      audio.addEventListener("loadedmetadata", () => {
+        if (Number.isFinite(audio!.duration)) setDuration(audio!.duration);
       });
       audio.addEventListener("ended", () => {
         setIsPlaying(false);
@@ -76,17 +92,32 @@ export function AudioBubble({ src, durationSec, className = "" }: AudioBubblePro
     if (isPlaying) {
       audio.pause();
     } else {
-      audio.play().catch(() => {
-        setIsPlaying(false);
-      });
+      audio.play().catch(() => setIsPlaying(false));
     }
-  }, [src, isPlaying]);
+  }, [playUrl, isPlaying]);
+
+  const handleProgressClick = useCallback(
+    (e: React.MouseEvent<HTMLDivElement>) => {
+      if (!canPlay || !progressBarRef.current) return;
+      const rect = progressBarRef.current.getBoundingClientRect();
+      const x = e.clientX - rect.left;
+      const pct = Math.max(0, Math.min(1, x / rect.width));
+      const seekTime = pct * totalSec;
+      const audio = audioRef.current;
+      if (audio) {
+        audio.currentTime = seekTime;
+        setCurrentTime(seekTime);
+      }
+    },
+    [canPlay, totalSec]
+  );
 
   return (
     <div
       className={`flex items-center gap-3 rounded-2xl rounded-br-md bg-zinc-800/90 px-3 py-2.5 ${className}`}
-      style={{ minWidth: "140px" }}
+      style={{ minWidth: "160px" }}
     >
+      {/* Links: Play/Pause */}
       {canPlay ? (
         <button
           type="button"
@@ -95,11 +126,11 @@ export function AudioBubble({ src, durationSec, className = "" }: AudioBubblePro
           aria-label={isPlaying ? "Pause" : "Abspielen"}
         >
           {isPlaying ? (
-            <svg className="h-5 w-5" fill="currentColor" viewBox="0 0 24 24">
+            <svg className="h-5 w-5" fill="currentColor" viewBox="0 0 24 24" aria-hidden>
               <path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z" />
             </svg>
           ) : (
-            <svg className="h-5 w-5 ml-0.5" fill="currentColor" viewBox="0 0 24 24">
+            <svg className="h-5 w-5 ml-0.5" fill="currentColor" viewBox="0 0 24 24" aria-hidden>
               <path d="M8 5v14l11-7z" />
             </svg>
           )}
@@ -115,19 +146,32 @@ export function AudioBubble({ src, durationSec, className = "" }: AudioBubblePro
           </svg>
         </div>
       )}
+
+      {/* Mitte: Fortschrittsbalken (klickbar) */}
       <div className="min-w-0 flex-1">
-        <div className="h-1.5 w-full overflow-hidden rounded-full bg-white/20">
+        <div
+          ref={progressBarRef}
+          role="slider"
+          tabIndex={canPlay ? 0 : undefined}
+          aria-label="Position"
+          aria-valuemin={0}
+          aria-valuemax={totalSec}
+          aria-valuenow={currentTime}
+          onClick={canPlay ? handleProgressClick : undefined}
+          className={`h-1.5 w-full cursor-pointer overflow-hidden rounded-full bg-white/20 transition-colors ${canPlay ? "hover:bg-white/25" : ""}`}
+        >
           <div
-            className="h-full rounded-full bg-white/70 transition-all duration-150"
+            className="h-full rounded-full bg-white/70 transition-all duration-100"
             style={{ width: `${progress}%` }}
           />
         </div>
-        <p className="mt-1 text-xs font-medium tabular-nums text-white/80">
-          {canPlay && isPlaying
-            ? `${formatDuration(currentTime)} / ${formatDuration(durationSec)}`
-            : formatDuration(durationSec)}
-        </p>
       </div>
+
+      {/* Rechts: Dauer (aktuell / gesamt) */}
+      <p className="shrink-0 text-xs font-medium tabular-nums text-white/80" style={{ minWidth: "3.5rem" }}>
+        {formatDuration(canPlay && isPlaying ? currentTime : 0)}
+        {totalSec > 0 ? ` / ${formatDuration(totalSec)}` : ""}
+      </p>
     </div>
   );
 }

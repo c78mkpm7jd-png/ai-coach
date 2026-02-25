@@ -12,6 +12,23 @@ function isImage(file: File) {
   return file.type.startsWith("image/");
 }
 
+function blobToBase64(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      const result = reader.result;
+      if (typeof result === "string") {
+        const base64 = result.includes(",") ? result.split(",")[1] : result;
+        resolve(base64 ?? "");
+      } else {
+        reject(new Error("Blob konnte nicht gelesen werden"));
+      }
+    };
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(blob);
+  });
+}
+
 type ChatMessage = {
   id: string;
   role: "user" | "assistant";
@@ -20,9 +37,11 @@ type ChatMessage = {
   chart?: ChartPayload;
   /** Blob-URLs für gesendete Bilder (nur aktuelle Session) */
   attachedImageUrls?: string[];
-  /** Sprachnachricht: Blob-URL nur in aktueller Session; Dauer immer aus API/State */
-  voiceBlobUrl?: string | null;
+  /** Sprachnachricht: Audio als Base64 (persistent im State), Dauer in Sekunden */
+  voiceAudioBase64?: string | null;
   voiceDurationSec?: number;
+  /** Legacy: Blob-URL (falls noch gesetzt) */
+  voiceBlobUrl?: string | null;
 };
 
 type AttachedItem = { file: File; previewUrl: string | null };
@@ -142,16 +161,31 @@ export default function ChatPage() {
     setAttachedList((prev) => [...prev, ...newItems]);
   }
 
-  /** Sprachnachricht senden: Audio an Chat-API. audioUrl von VoiceMemoButton (einmal createObjectURL), gleiche URL für Audio-Bubble. */
+  /** Sprachnachricht senden: Blob zu Base64, mit Nachricht speichern; gleiche Base64 für Abspielen. */
   const handleSendVoiceMemo = useCallback(
-    async (blob: Blob, durationSec: number, audioUrl: string) => {
+    async (blob: Blob, durationSec: number) => {
       if (loading) return;
+      let base64: string;
+      try {
+        base64 = await blobToBase64(blob);
+      } catch (e) {
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: `err-${Date.now()}`,
+            role: "assistant",
+            content: "Audio konnte nicht gespeichert werden.",
+            created_at: new Date().toISOString(),
+          },
+        ]);
+        return;
+      }
       const userMsg: ChatMessage = {
         id: `temp-${Date.now()}`,
         role: "user",
         content: "",
         created_at: new Date().toISOString(),
-        voiceBlobUrl: audioUrl,
+        voiceAudioBase64: base64,
         voiceDurationSec: durationSec,
       };
       setMessages((prev) => [...prev, userMsg]);
@@ -334,8 +368,9 @@ export default function ChatPage() {
                         : "bg-white/10 text-white border border-white/10 rounded-bl-md"
                     }`}
                   >
-                    {isUser && (m.voiceDurationSec != null || m.voiceBlobUrl) ? (
+                    {isUser && (m.voiceDurationSec != null || m.voiceAudioBase64 || m.voiceBlobUrl) ? (
                       <AudioBubble
+                        audioBase64={m.voiceAudioBase64 ?? undefined}
                         src={m.voiceBlobUrl ?? undefined}
                         durationSec={m.voiceDurationSec ?? 0}
                       />
@@ -358,7 +393,7 @@ export default function ChatPage() {
                       </div>
                     )}
                     {!isUser && m.content ? <p className="whitespace-pre-wrap break-words">{m.content}</p> : null}
-                    {isUser && !(m.voiceDurationSec != null || m.voiceBlobUrl) && m.content ? (
+                    {isUser && !(m.voiceDurationSec != null || m.voiceAudioBase64 || m.voiceBlobUrl) && m.content ? (
                       <p className="whitespace-pre-wrap break-words">{m.content}</p>
                     ) : null}
                     {!isUser && m.chart && <MessageChart chart={m.chart} />}
