@@ -2,8 +2,8 @@
  * Check-in-Chat: State beim Öffnen des Chats + optional Partial Save.
  * Eigenständige Route, keine Logik in chat/route.ts.
  *
- * GET: Heute Strava-Aktivität? Heute Check-in? → suggestedMessage (oder null)
- * POST: Partial Save – einzelne Felder für heute in daily_checkins speichern.
+ * GET: Optionales Datum (YYYY-MM-DD) für Strava-Filter + Check-in.
+ * POST: Optionales Datum für Partial Save in daily_checkins.
  */
 
 import { NextRequest, NextResponse } from "next/server";
@@ -13,9 +13,11 @@ import { getStravaActivities } from "@/lib/strava";
 import {
   getTodayBoundsUTC,
   getTodayCheckin,
+  getCheckinByDate,
   isCheckinComplete,
   getMissingFields,
   saveCheckinPartial,
+  saveCheckinPartialForDate,
   type CheckinRow,
 } from "@/lib/checkin-partial";
 
@@ -30,8 +32,19 @@ const supabaseAdmin = createClient(supabaseUrl, supabaseServiceRoleKey, {
   auth: { autoRefreshToken: false, persistSession: false },
 });
 
-/** GET: State für Chat-Start – Strava heute, Check-in heute, vorgeschlagene erste Nachricht */
-export async function GET() {
+const DATE_STR_RE = /^\d{4}-\d{2}-\d{2}$/;
+const isValidDateStr = (v: unknown): v is string => {
+  if (typeof v !== "string" || !DATE_STR_RE.test(v)) return false;
+  const [yearStr, monthStr, dayStr] = v.split("-");
+  const year = Number(yearStr);
+  const monthIndex = Number(monthStr) - 1; // 0-11
+  const day = Number(dayStr);
+  const dt = new Date(Date.UTC(year, monthIndex, day, 0, 0, 0, 0));
+  return dt.getUTCFullYear() === year && dt.getUTCMonth() === monthIndex && dt.getUTCDate() === day;
+};
+
+/** GET: State für Chat-Start – optionaler Strava-/Check-in-Tag */
+export async function GET(request: NextRequest) {
   try {
     const { userId } = await auth();
     if (!userId) {
@@ -39,14 +52,17 @@ export async function GET() {
     }
 
     const { dateStr: todayStr } = getTodayBoundsUTC();
+    const dateParam = request.nextUrl.searchParams.get("date");
+    const useDateParam = isValidDateStr(dateParam);
+    const activeDateStr = useDateParam ? dateParam : todayStr;
 
     const [stravaActivities, todayCheckin] = await Promise.all([
       getStravaActivities(supabaseAdmin, userId),
-      getTodayCheckin(supabaseAdmin, userId),
+      useDateParam ? getCheckinByDate(supabaseAdmin, userId, activeDateStr) : getTodayCheckin(supabaseAdmin, userId),
     ]);
 
     const todayStravaActivities = stravaActivities.filter((a) =>
-      a.start_date.startsWith(todayStr)
+      a.start_date.startsWith(activeDateStr)
     );
     const todayHasStravaActivity = todayStravaActivities.length > 0;
     const firstStrava = todayStravaActivities[0];
@@ -63,7 +79,7 @@ export async function GET() {
       const act = firstStrava!;
       const type = act.type || "Aktivität";
       const min = Math.round((act.moving_time || act.elapsed_time || 0) / 60);
-      suggestedMessage = `Hey, stark – du warst heute ${type} (${min} Min). Magst du mir kurz sagen: Wie ist dein Gewicht heute, und wie fühlst du dich (Energie & Hunger je 1–5)? Kein Stress, falls du was nicht weißt.`;
+      suggestedMessage = `Hey, stark – du warst an diesem Tag ${type} (${min} Min). Magst du mir kurz sagen: Wie ist dein Gewicht an diesem Tag, und wie fühlst du dich (Energie & Hunger je 1–5)? Kein Stress, falls du was nicht weißt.`;
     } else if (todayHasStravaActivity && todayCheckin) {
       const act = firstStrava!;
       const type = act.type || "Aktivität";
@@ -125,7 +141,7 @@ export async function GET() {
   }
 }
 
-/** POST: Partial Save – übergebene Felder für heute speichern (Upsert heute). */
+/** POST: Optional date für Partial Save (Update oder Insert für diesen Tag). */
 export async function POST(request: NextRequest) {
   try {
     const { userId } = await auth();
@@ -134,7 +150,15 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    await saveCheckinPartial(supabaseAdmin, userId, body);
+    const dateFromBody = body?.date;
+
+    if (isValidDateStr(dateFromBody)) {
+      const { date: _date, ...checkinBody } = body ?? {};
+      await saveCheckinPartialForDate(supabaseAdmin, userId, dateFromBody, checkinBody);
+    } else {
+      await saveCheckinPartial(supabaseAdmin, userId, body);
+    }
+
     return NextResponse.json({ ok: true });
   } catch (err) {
     console.error("[checkin-chat] POST:", err);

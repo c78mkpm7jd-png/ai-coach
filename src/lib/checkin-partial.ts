@@ -45,6 +45,37 @@ export function getTodayBoundsUTC(): { start: string; end: string; dateStr: stri
   return { start, end: endStr, dateStr };
 }
 
+const DATE_STR_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+export function getDateBoundsUTC(dateStr: string): { start: string; end: string; dateStr: string } {
+  if (!DATE_STR_RE.test(dateStr)) {
+    throw new Error(`Ungültiges Datum (erwartet YYYY-MM-DD): ${dateStr}`);
+  }
+
+  const [yearStr, monthStr, dayStr] = dateStr.split("-");
+  const year = Number(yearStr);
+  const monthIndex = Number(monthStr) - 1; // JS month: 0-11
+  const day = Number(dayStr);
+
+  const startDate = new Date(Date.UTC(year, monthIndex, day, 0, 0, 0, 0));
+  // Strikte Validierung (z.B. 2026-02-31 würde sonst "rollieren")
+  if (
+    startDate.getUTCFullYear() !== year ||
+    startDate.getUTCMonth() !== monthIndex ||
+    startDate.getUTCDate() !== day
+  ) {
+    throw new Error(`Ungültiges Datum (erwartet YYYY-MM-DD): ${dateStr}`);
+  }
+
+  const endDate = new Date(startDate);
+  endDate.setUTCDate(endDate.getUTCDate() + 1);
+
+  const start = startDate.toISOString().slice(0, 10) + "T00:00:00.000Z";
+  const end = endDate.toISOString().slice(0, 10) + "T00:00:00.000Z";
+
+  return { start, end, dateStr };
+}
+
 /** Vollständig = alle Pflichtfelder gesetzt: Gewicht, Kalorien, Makros, Energie, Hunger */
 export function isCheckinComplete(c: CheckinRow | null): boolean {
   if (!c) return false;
@@ -87,6 +118,29 @@ export async function getTodayCheckin(
     .order("created_at", { ascending: false })
     .limit(1)
     .maybeSingle();
+  return (data ?? null) as CheckinRow | null;
+}
+
+/** Check-in laden für ein beliebiges Datum (UTC-Tag). */
+export async function getCheckinByDate(
+  supabase: SupabaseClient,
+  userId: string,
+  dateStr: string
+): Promise<CheckinRow | null> {
+  const { start, end } = getDateBoundsUTC(dateStr);
+
+  const { data } = await supabase
+    .from("daily_checkins")
+    .select(
+      "id, created_at, weight_kg, hunger_level, energy_level, trained, activity_type, activity_duration_min, activity_calories_burned, calories_intake, protein_intake, carbs_intake, fat_intake"
+    )
+    .eq("user_id", userId)
+    .gte("created_at", start)
+    .lt("created_at", end)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
   return (data ?? null) as CheckinRow | null;
 }
 
@@ -165,6 +219,89 @@ export async function saveCheckinPartial(
       carbs_intake: toNum(carbs_intake),
       fat_intake: toNum(fat_intake),
     };
+    const { error } = await supabase.from("daily_checkins").insert(payload);
+    if (error) throw new Error(error.message);
+  }
+}
+
+/**
+ * Partial Save: übergebene Felder für ein Datum speichern (Update oder Insert).
+ * Zusätzlich wird beim Insert `date: dateStr` gesetzt.
+ */
+export async function saveCheckinPartialForDate(
+  supabase: SupabaseClient,
+  userId: string,
+  dateStr: string,
+  body: CheckinPartialBody
+): Promise<void> {
+  const {
+    weight_kg,
+    hunger_level,
+    energy_level,
+    trained,
+    activity_type,
+    activity_duration_min,
+    activity_calories_burned,
+    calories_intake,
+    protein_intake,
+    carbs_intake,
+    fat_intake,
+  } = body;
+
+  const { start: dateStart, end: dateEnd } = getDateBoundsUTC(dateStr);
+
+  const existing = await supabase
+    .from("daily_checkins")
+    .select(
+      "id, weight_kg, hunger_level, energy_level, trained, activity_type, activity_duration_min, activity_calories_burned, calories_intake, protein_intake, carbs_intake, fat_intake"
+    )
+    .eq("user_id", userId)
+    .gte("created_at", dateStart)
+    .lt("created_at", dateEnd)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (existing.data) {
+    const row = existing.data as Record<string, unknown>;
+    const updatePayload = {
+      weight_kg: weight_kg != null ? toNum(weight_kg) : row.weight_kg,
+      hunger_level: hunger_level != null ? toNum(hunger_level) : row.hunger_level,
+      energy_level: energy_level != null ? toNum(energy_level) : row.energy_level,
+      trained: trained != null ? toBool(trained) : row.trained,
+      activity_type: activity_type != null ? String(activity_type) : row.activity_type,
+      activity_duration_min:
+        activity_duration_min != null ? toNum(activity_duration_min) : row.activity_duration_min,
+      activity_calories_burned:
+        activity_calories_burned != null ? toNum(activity_calories_burned) : row.activity_calories_burned,
+      calories_intake: calories_intake != null ? toNum(calories_intake) : row.calories_intake,
+      protein_intake: protein_intake != null ? toNum(protein_intake) : row.protein_intake,
+      carbs_intake: carbs_intake != null ? toNum(carbs_intake) : row.carbs_intake,
+      fat_intake: fat_intake != null ? toNum(fat_intake) : row.fat_intake,
+    };
+
+    const { error } = await supabase
+      .from("daily_checkins")
+      .update(updatePayload)
+      .eq("id", existing.data.id);
+    if (error) throw new Error(error.message);
+  } else {
+    const payload: Record<string, unknown> = {
+      user_id: userId,
+      date: dateStr,
+      weight_kg: toNum(weight_kg),
+      hunger_level: toNum(hunger_level),
+      energy_level: toNum(energy_level),
+      trained: trained != null ? toBool(trained) : false,
+      activity_type: activity_type != null ? String(activity_type) : "ruhetag",
+      activity_duration_min: toNum(activity_duration_min),
+      activity_calories_burned: toNum(activity_calories_burned),
+      calories_intake: toNum(calories_intake),
+      protein_intake: toNum(protein_intake),
+      carbs_intake: toNum(carbs_intake),
+      fat_intake: toNum(fat_intake),
+    };
+
     const { error } = await supabase.from("daily_checkins").insert(payload);
     if (error) throw new Error(error.message);
   }

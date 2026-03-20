@@ -1,8 +1,8 @@
 "use client";
 
-import { useState, useEffect, FormEvent } from "react";
+import { useState, useEffect, FormEvent, useMemo } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 
 type TodayCheckin = {
   id?: string;
@@ -22,6 +22,7 @@ type TodayCheckin = {
 
 export default function CheckinPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [weight, setWeight] = useState("");
   const [hunger, setHunger] = useState(3);
   const [energy, setEnergy] = useState(3);
@@ -36,6 +37,32 @@ export default function CheckinPage() {
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(true);
 
+  const todayStr = useMemo(() => new Date().toISOString().slice(0, 10), []);
+  const dateParam = searchParams.get("date");
+
+  const isValidDateStr = (v: unknown): v is string => {
+    if (typeof v !== "string") return false;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(v)) return false;
+    const [yearStr, monthStr, dayStr] = v.split("-");
+    const year = Number(yearStr);
+    const monthIndex = Number(monthStr) - 1; // 0-11
+    const day = Number(dayStr);
+    const dt = new Date(Date.UTC(year, monthIndex, day, 0, 0, 0, 0));
+    return dt.getUTCFullYear() === year && dt.getUTCMonth() === monthIndex && dt.getUTCDate() === day;
+  };
+
+  const activeDate = useMemo(() => {
+    if (isValidDateStr(dateParam)) return dateParam;
+    return todayStr;
+  }, [dateParam, todayStr]);
+
+  const isPastDate = activeDate < todayStr;
+
+  const formatGermanDate = (d: string) => {
+    const [y, m, day] = d.split("-");
+    return `${day}.${m}.${y}`;
+  };
+
   const ACTIVITY_OPTIONS = [
     { id: "ruhetag", label: "Ruhetag" },
     { id: "krafttraining", label: "Krafttraining" },
@@ -47,7 +74,7 @@ export default function CheckinPage() {
   ];
 
   useEffect(() => {
-    fetch("/api/checkin-chat")
+    fetch(`/api/checkin-chat?date=${activeDate}`)
       .then((res) => res.ok ? res.json() : null)
       .then((data: { todayCheckin?: TodayCheckin | null } | null) => {
         const c = data?.todayCheckin;
@@ -66,7 +93,7 @@ export default function CheckinPage() {
       })
       .catch(() => {})
       .finally(() => setLoading(false));
-  }, []);
+  }, [activeDate]);
 
   const canSubmit = !!weight && training !== null;
 
@@ -79,6 +106,7 @@ export default function CheckinPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          date: activeDate,
           weight_kg: weight ? parseFloat(weight) : null,
           hunger_level: hunger,
           energy_level: energy,
@@ -133,7 +161,7 @@ export default function CheckinPage() {
             Täglicher Abschluss
           </p>
           <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">
-            Dein Check-in
+            {isPastDate ? `Check-in nachholen – ${formatGermanDate(activeDate)}` : "Dein Check-in"}
           </h1>
           <p className="text-sm leading-relaxed text-white/70 sm:text-base">
             Kurzer Status zu Gewicht, Hunger, Energie und Training – damit
