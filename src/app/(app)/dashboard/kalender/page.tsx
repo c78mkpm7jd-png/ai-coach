@@ -194,7 +194,7 @@ export default function KalenderPage() {
             const e = eventByDate.get(key);
             const isPastDay = key < todayStr;
             const hasCheckin = checkinDates.includes(key);
-            const shouldRingMissingCheckin = isPastDay && !e && !hasCheckin;
+            const shouldRingMissingCheckin = isPastDay && !hasCheckin;
             let bg = "bg-white/10 text-white/50";
             if (e) {
               bg = e.type === "training" ? "bg-emerald-500/40 text-emerald-100" : "bg-blue-500/40 text-blue-100";
@@ -204,7 +204,7 @@ export default function KalenderPage() {
                 key={key}
                 type="button"
                 onClick={() => {
-                  if (isPastDay && !e && !hasCheckin) {
+                  if (isPastDay && !hasCheckin) {
                     router.push(`/checkin?date=${key}`);
                     return;
                   }
@@ -212,7 +212,7 @@ export default function KalenderPage() {
                 }}
                 className={`relative flex aspect-square items-center justify-center rounded-lg text-sm font-medium ${bg} ${
                   isToday ? "ring-2 ring-white ring-offset-2 ring-offset-zinc-950" : ""
-                } ${shouldRingMissingCheckin ? "ring-1 ring-red-500/60" : ""} hover:ring-2 hover:ring-white/50`}
+                } ${shouldRingMissingCheckin ? "ring-1 ring-red-500/60 hover:ring-red-500/60" : "hover:ring-2 hover:ring-white/50"}`}
               >
                 {day}
                 {!e && <span className="absolute right-1 top-1 text-white/40">+</span>}
@@ -247,7 +247,7 @@ export default function KalenderPage() {
           <div className="fixed left-1/2 top-1/2 z-50 w-full max-w-sm -translate-x-1/2 -translate-y-1/2 rounded-2xl border border-white/10 bg-zinc-900 p-5 shadow-xl">
             <h3 className="text-lg font-semibold text-white">Tag markieren</h3>
             <p className="mt-1 text-sm text-white/60">{selectedDate}</p>
-            {isPastSelected && !selectedEntry && selectedHasCheckin && (
+            {isPastSelected && selectedHasCheckin && (
               <Link
                 href={`/checkin?date=${selectedDate}`}
                 className="mt-3 block text-sm font-medium text-emerald-100 underline hover:text-emerald-200"
